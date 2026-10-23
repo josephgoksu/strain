@@ -1,0 +1,25 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+      - run: ./build.sh
+      - name: "Smoke test: the app starts and keeps running"
+        run: |
+          open dist/Strain.app
+          sleep 15
+          pgrep -x Strain
+          pkill -x Strain
+      - name: "--report answers without starting the UI"
+        run: dist/Strain.app/Contents/MacOS/Strain --report

@@ -1,0 +1,102 @@
+name: release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - run: swift test
+      # Without these secrets the release is ad-hoc signed: it runs, but Strain's helper (which checks the
+      # Reaktif LLC team signature, HelperKit.team) stays off and macOS re-asks permissions after each update.
+      - name: Import the Developer ID certificate (skipped when the secrets are not set)
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          NOTARY_KEY_P8: ${{ secrets.NOTARY_KEY_P8 }}
+        run: |
+          [ -n "$CERT_P12" ] || { echo "No signing secrets: the release is ad-hoc signed."; exit 0; }
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD=$(openssl rand -hex 16)
+          echo "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN" | grep -o '"Developer ID Application[^"]*"' | head -1 | tr -d '"')
+          echo "SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          if [ -n "$NOTARY_KEY_P8" ]; then
+            echo "$NOTARY_KEY_P8" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+            echo "NOTARY_KEY=$RUNNER_TEMP/notary.p8" >> "$GITHUB_ENV"
+          fi
+      - name: Build, sign and notarize
+        env:
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER: ${{ secrets.NOTARY_ISSUER }}
+        run: VERSION="${GITHUB_REF_NAME#v}" ./build.sh
+      - name: "Smoke test: the app starts and keeps running"
+        run: |
+          open dist/Strain.app
+          sleep 15
+          pgrep -x Strain
+          pkill -x Strain
+      - name: "Gatekeeper check (notarized releases only)"
+        if: env.NOTARY_KEY != ''
+        run: spctl --assess --type execute --verbose=2 dist/Strain.app
+      - name: Release notes from CHANGELOG.md
+        run: awk -v v="${GITHUB_REF_NAME#v}" '/^## \[/{p=index($0, "[" v "]")>0; next} /^\[/{p=0} p' CHANGELOG.md > notes.md
+      - run: gh release create "$GITHUB_REF_NAME" dist/Strain.zip dist/Strain.zip.sha256 --title "Strain $GITHUB_REF_NAME" --notes-file notes.md
+        env:
+          GH_TOKEN: ${{ github.token }}
+      # Needs TAP_TOKEN: a fine-grained token with Contents read/write on josephgoksu/homebrew-tap only.
+      - name: Update the Homebrew cask (skipped when TAP_TOKEN is not set)
+        env:
+          TAP_TOKEN: ${{ secrets.TAP_TOKEN }}
+        run: |
+          [ -n "$TAP_TOKEN" ] || { echo "No TAP_TOKEN: update Casks/strain.rb in josephgoksu/homebrew-tap by hand."; exit 0; }
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA=$(cut -d' ' -f1 dist/Strain.zip.sha256)
+          git clone --depth 1 "https://x-access-token:${TAP_TOKEN}@github.com/josephgoksu/homebrew-tap.git" "$RUNNER_TEMP/tap"
+          mkdir -p "$RUNNER_TEMP/tap/Casks"
+          cat > "$RUNNER_TEMP/tap/Casks/strain.rb" <<CASK
+          cask "strain" do
+            version "$VERSION"
+            sha256 "$SHA"
+
+            url "https://github.com/josephgoksu/strain/releases/download/v#{version}/Strain.zip"
+            name "Strain"
+            desc "Menu bar app that names what is straining your Mac"
+            homepage "https://github.com/josephgoksu/strain"
+
+            livecheck do
+              url :url
+              strategy :github_latest
+            end
+
+            depends_on macos: ">= :sonoma"
+
+            app "Strain.app"
+
+            uninstall quit: "com.josephgoksu.strain"
+
+            zap trash: [
+              "~/Library/Application Support/Strain",
+              "~/Library/Preferences/com.josephgoksu.strain.plist",
+            ]
+          end
+          CASK
+          cd "$RUNNER_TEMP/tap"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/strain.rb
+          git commit -m "strain $VERSION"
+          git push
+      - name: Remove the signing keychain
+        if: always()
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" 2>/dev/null || true

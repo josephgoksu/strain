@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+  <key>CFBundleIdentifier</key><string>com.josephgoksu.strain</string>
+  <key>CFBundleName</key><string>Strain</string>
+  <key>CFBundleExecutable</key><string>Strain</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleShortVersionString</key><string>0.1.0</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
+  <key>CFBundleIconFile</key><string>Strain</string>
+  <key>LSUIElement</key><true/>
+  <key>NSBluetoothAlwaysUsageDescription</key><string>Strain turns Bluetooth on or off when you click its Bluetooth switch.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Strain asks Finder to empty the Trash when you click Empty Trash.</string>
+</dict></plist>
