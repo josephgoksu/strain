@@ -54,7 +54,7 @@ Thresholds live in one place: [`Thresholds`](Sources/Strain/Pressure.swift).
 brew install --cask josephgoksu/tap/strain
 ```
 
-Or download `Strain.zip` from [Releases](https://github.com/josephgoksu/strain/releases) (check it against `Strain.zip.sha256`), unzip, move `Strain.app` to Applications.
+Or grab it from the [Strain page](https://josephgoksu.com/projects/strain), or download `Strain.zip` from [Releases](https://github.com/josephgoksu/strain/releases) (check it against `Strain.zip.sha256`), unzip, move `Strain.app` to Applications.
 
 From source:
 
