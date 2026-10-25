@@ -150,3 +150,50 @@ import Testing
     #expect(found.map(\.name) == ["vite"] && found[0].pids == [1])
     #expect(Forgotten.terminalClosed(procs, me: 501, kept: ["vite", "tmux", "ollama"], jobs: { [] }).isEmpty)
 }
+
+@Test func unusedAppsCountFromLastFront() {
+    let now = Date.now
+    let apps = [Forgotten.App(bundlePath: "/Applications/Xcode.app", bundleID: "com.apple.dt.Xcode", launched: now - 86400),
+                Forgotten.App(bundlePath: "/Applications/Slack.app", bundleID: "com.tinyspeck.slackmacgap", launched: now - 86400),
+                Forgotten.App(bundlePath: "/System/Library/CoreServices/Finder.app", bundleID: "com.apple.finder", launched: now - 86400),
+                Forgotten.App(bundlePath: "/Applications/Raycast.app", bundleID: "com.raycast.macos", launched: now - 86400)]
+    let groups = apps.map { Group(name: ($0.bundlePath as NSString).lastPathComponent, bundle: $0.bundlePath, path: $0.bundlePath, rssKB: 900_000, pids: [1]) }
+    let lost = Forgotten.unusedApps(apps, lastFront: ["com.apple.dt.Xcode": now - 5 * 3600, "com.tinyspeck.slackmacgap": now - 600],
+                                    groups: groups, skip: ["/Applications/Raycast.app"], now: now)
+    #expect(lost.map(\.group.name) == ["Xcode.app"])  // Slack used 10 min ago, Finder never, Raycast opens at login
+}
+
+@Test func idleMemoryIsForNonAppsOnly() {
+    let now = Date.now
+    let groups = [Group(name: "ollama", path: "/opt/homebrew/bin/ollama", cpu: 0.2, rssKB: 2_000_000, uids: [501]),
+                  Group(name: "gopls", path: "/Users/x/go/bin/gopls", cpu: 0.1, rssKB: 900_000, uids: [501]),
+                  Group(name: "busy", path: "/opt/x/busy", cpu: 30, rssKB: 900_000, uids: [501]),
+                  Group(name: "small", path: "/opt/x/small", cpu: 0, rssKB: 10_000, uids: [501])]
+    var since = Forgotten.trackIdle(groups, [:], now: now - 3 * 3600)
+    #expect(Set(since.keys) == ["ollama", "gopls"])
+    since = Forgotten.trackIdle(groups, since, now: now)  // the start time sticks
+    let lost = Forgotten.idleMemory(groups, idleSince: since, appOwned: ["gopls"], me: 501, now: now)
+    #expect(lost.map(\.group.name) == ["ollama"])  // gopls belongs to an open editor
+}
+
+@Test func oldServersSkipLaunchdJobsAndTheirChildren() {
+    func srv(_ pid: Int32, _ hours: Double, kind: Server.Kind = .dev) -> Server {
+        Server(pid: pid, uid: 501, command: "node", path: "/opt/homebrew/bin/node", args: "", ports: [5173], exposed: false,
+               project: "app\(pid)", cwd: nil, kind: kind, rssKB: 100_000, seconds: Int(hours * 3600))
+    }
+    let servers = [srv(10, 20), srv(11, 20), srv(12, 2), srv(13, 20, kind: .app)]
+    let lost = Forgotten.oldServers(servers, parents: [11: 50, 50: 99, 99: 1], me: 501, jobs: { [99] })  // 11 runs under a launchd job's script
+    #expect(lost.map(\.label) == ["app10"] && lost[0].group.name == "node" && lost[0].group.pids == [10])
+}
+
+@Test func mergeShowsAProcessOnceAndHonoursKeep() {
+    let vite = Group(name: "vite", path: "/x/vite", rssKB: 100, pids: [7])
+    let lists = [[Lost(group: vite, reason: .terminalClosed)], [Lost(group: vite, reason: .server(ports: [5173]), label: "site")],
+                 [Lost(group: Group(name: "ollama", path: "/x/ollama", rssKB: 900, pids: [8]), reason: .idle(since: .now))]]
+    #expect(Forgotten.merge(lists, kept: []).map(\.group.name) == ["ollama", "vite"])
+    #expect(Forgotten.merge(lists, kept: ["ollama"]).map(\.group.name) == ["vite"])
+    let now = Date.now
+    let text = Forgotten.digest([Lost(group: Group(name: "ollama", path: "", rssKB: 2_097_152, pids: [8]), reason: .idle(since: now - 7200))],
+                                title: { $0.name }, now: now)
+    #expect(text == "ollama 2h 0m · 2.0 GB")
+}

@@ -108,7 +108,7 @@ struct AppsTab: View {
         LazyVStack(spacing: 2) {
             if !store.forgotten.isEmpty {
                 CleanSection(title: "Forgotten", symbol: "moon.zzz", detail: "\(store.forgotten.count)")
-                ForEach(store.forgotten) { ForgottenRow(group: $0) }
+                ForEach(store.forgotten) { ForgottenRow(lost: $0) }
                 CleanSection(title: "All apps", symbol: "square.stack.3d.up")
             }
             ForEach(store.culprits.prefix(max(rows, 12))) { AppRow(group: $0) }
@@ -116,32 +116,44 @@ struct AppsTab: View {
     }
 }
 
-/// Still running after its terminal closed. Quit (confirmed) or Keep (never listed again).
+/// Something started and forgotten, and why. Quit (confirmed) or Keep (never listed again).
 struct ForgottenRow: View {
     @Environment(Store.self) private var store
-    let group: Group
+    let lost: Lost
 
     var body: some View {
+        let g = lost.group, title = lost.label ?? store.title(g)
         HStack(spacing: 10) {
-            SymbolTile(symbol: "terminal", tint: .orange).frame(width: 30, height: 30)
+            SwiftUI.Group {
+                if g.bundle != nil { AppGroupIcon(group: g) } else { SymbolTile(symbol: symbol, tint: .orange) }
+            }
+            .frame(width: 30, height: 30)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
-                    Text(store.title(group)).font(.body.weight(.semibold)).lineLimit(1)
-                    if group.pids.count > 1 { Text("×\(group.pids.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+                    Text(title).font(.body.weight(.semibold)).lineLimit(1)
+                    if g.pids.count > 1 { Text("×\(g.pids.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
                 }
-                Text("Terminal closed · running \(formatDuration(group.seconds)) · \(formatMemory(kb: group.rssKB))")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    .help(group.path)
+                Text("\(lost.why()) · \(formatMemory(kb: g.rssKB))").font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .help(g.path)
             }
             Spacer(minLength: 6)
-            Button("Keep") { withAnimation(.snappy) { store.keep(group.name) } }
+            Button("Keep") { withAnimation(.snappy) { store.keep(lost) } }
                 .buttonStyle(HoverButtonStyle()).font(.caption)
-                .help("Leave it running and never list \(store.title(group)) here again. Undo in ⋯ → Kept.")
-            ConfirmButton(title: "Quit", confirm: "Quit \(store.title(group))?", symbol: "xmark.circle.fill") {
-                withAnimation(.snappy) { store.quitForgotten(group) }
+                .help("Leave it running and never list \(title) here again. Undo in ⋯ → Kept.")
+            ConfirmButton(title: "Quit", confirm: "Quit \(title)?", symbol: "xmark.circle.fill") {
+                withAnimation(.snappy) { store.quitForgotten(lost) }
             }
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
+    }
+
+    private var symbol: String {
+        switch lost.reason {
+        case .terminalClosed: "terminal"
+        case .unused: "app.dashed"
+        case .idle: "memorychip"
+        case .server: "network"
+        }
     }
 }
 

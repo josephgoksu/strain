@@ -14,7 +14,11 @@ enum Thresholds {
     static let diskAmberGB = 10.0, diskRedGB = 3.0  // free space: below this macOS can't grow swap or caches
     static let checkDays = 7.0           // the background check runs at most this often…
     static let checkMinGB = 5.0          // …and only notifies when at least this much can go
-    static let forgottenAfter = 7200.0   // a terminal-closed process younger than this isn't "forgotten" yet
+    static let forgottenAfter = 7200.0   // terminal-closed or idle for less than this isn't "forgotten" yet
+    static let unusedAppHours = 4.0      // an app not brought to the front for this long is unused
+    static let idleMemoryMB = 500.0      // idle memory: holding at least this at under 1% CPU
+    static let oldServerHours = 12.0     // a dev server up this long is probably left over
+    static let digestHour = 17           // the daily Forgotten notification comes at the first tick after this hour
     static let oldDownloadDays = 90.0    // a Downloads item nobody opened or changed for this long counts as old
     static let staleProjectDays = 30.0   // a project nobody touched for this long: its build folders count as stale
 }

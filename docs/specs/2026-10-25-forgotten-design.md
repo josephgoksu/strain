@@ -1,6 +1,6 @@
 # Forgotten (design, 2026-10-25)
 
-Status: approved 2026-10-25. Slice 1 built (`strain.md` section 28). Once built, it folds into `strain.md` as a numbered section.
+Status: approved 2026-10-25. All four slices built (`strain.md` sections 28 and 29). Once built, it folds into `strain.md` as a numbered section.
 
 ## Goal
 
@@ -24,7 +24,7 @@ Each is cheap: the process list Strain already reads each tick, plus app-switch 
 | # | Signal | Rule | Example | Measured here (2026-10-25) |
 |---|---|---|---|---|
 | 1 | **Terminal closed** | Mine, parent pid 1, no terminal (`tty` `??`), not inside an `.app`, not a macOS path, not a launchd job (`launchctl list` PIDs), alive ≥ `Thresholds.forgottenAfter` (2 h) | `vite` after closing its Ghostty tab | 3 hits, all deliberate daemons: tmux server, gpg-agent, keyboxd. So it ships with a default Keep list for tools that detach on purpose: tmux, screen, gpg-agent, keyboxd, ssh-agent |
-| 2 | **Unused app** | A regular app (Dock icon) not brought to the front for `Thresholds.unusedAppHours` (4 h). Last-active times saved, so a Strain restart doesn't reset them; unknown = launch time | Xcode, Docker, Slack with its window closed | Window counts don't work: a closed window stays as a hidden window (Tailscale: 5 windows, 0 on screen), and other Spaces aren't "on screen". Last-front time is reliable |
+| 2 | **Unused app** | A regular app (Dock icon) not brought to the front for `Thresholds.unusedAppHours` (4 h). Last-active times saved, so a Strain restart doesn't reset them; unknown = when Strain first saw the app (launch time would flag every long-open app on install) | Xcode, Docker, Slack with its window closed | Window counts don't work: a closed window stays as a hidden window (Tailscale: 5 windows, 0 on screen), and other Spaces aren't "on screen". Last-front time is reliable |
 | 3 | **Idle memory** | Any group ≥ `Thresholds.idleMemoryMB` (500 MB) under 1% CPU for 2 h | Ollama with a model loaded, a booted simulator | Uses the per-group history Monitor already keeps, like `hogSince` |
 | 4 | **Old dev server** | A Servers row of kind `.dev` up ≥ 12 h, or one that also matches signal 1 | `bun dev` on :5173 since yesterday | Servers already knows kind, ports and age |
 
@@ -63,7 +63,7 @@ Finder, Strain, login items that open at login, and menu bar apps (no Dock icon)
 |---|---|
 | False alarms on things kept running on purpose (dev API for the iPhone, Ollama) | Keep button; launchd jobs never count (the iPhone dev API is one); 2 h minimum age |
 | Quitting the wrong process | Same `Action` rules as Apps: own processes only, SIGTERM, apps via `terminate()`, confirm first |
-| Last-front times lost | Saved in UserDefaults; unknown falls back to launch time, which only makes an app look *more* recently used |
+| Last-front times lost | Saved in UserDefaults; an app Strain hasn't seen counts from first sight, so a fresh install flags nothing for 4 h |
 
 ## Tripwire
 

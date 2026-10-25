@@ -362,3 +362,15 @@ Design and later slices: `2026-10-25-forgotten-design.md`.
 | Apps tab | Forgotten section on top while anything qualifies: name, "Terminal closed · running 3h · 120 MB", Keep, Quit (confirm, SIGTERM via `perform(.terminate)`) |
 | Sample | `ps` gains `ppid` and `tty`; the padded tty column is trimmed off the path |
 
+## 29. Forgotten: unused apps, idle memory, old servers, digest (2026-10-25)
+
+| Signal | Rule |
+|---|---|
+| Unused app | Dock app not in front for `Thresholds.unusedAppHours` (4 h). Front times from `didActivateApplicationNotification` plus each tick, saved in `lastFront`; an app Strain hasn't seen counts from first sight. Never Finder, Strain, menu bar apps or apps that open at login |
+| Idle memory | A group of yours with ≥ `idleMemoryMB` (500 MB) under 1% CPU for 2 h, that isn't an app or a helper an app started (a language server under an editor). The iOS Simulator counts |
+| Old dev server | A `.dev` server of yours up ≥ `oldServerHours` (12 h), unless a launchd job runs it, directly or through a script (parent chain checked). Quit reaches only the server's process |
+| One row per process | First signal wins: terminal closed, unused app, old server, idle memory. Keep remembers a server's project, else the name |
+| Digest | Once a day at the first tick after `digestHour` (17:00) when anything is listed: "3 still running: vite 3h, Xcode 6h, ollama 2h · 3.1 GB". `--fake-digest` sends it at the first tick. Follows Notifications |
+| Report | `Strain --report` has a Forgotten line |
+| Cost | `launchctl list` at most once a tick, only when a candidate needs it |
+

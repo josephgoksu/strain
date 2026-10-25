@@ -51,7 +51,16 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var monitor = Monitor()
     private(set) var system = SystemSample.read()
     private(set) var groups: [Group] = []
-    private(set) var forgotten: [Group] = []           // still running after their terminal closed
+    private(set) var forgotten: [Lost] = []            // started and forgotten: terminal closed, unused, idle, old server
+    /// bundle ID → last time the app was in front. Saved, so a Strain restart doesn't make every app look fresh.
+    @ObservationIgnored private var lastFront = (UserDefaults.standard.dictionary(forKey: "lastFront") as? [String: Double] ?? [:])
+        .mapValues { Date(timeIntervalSince1970: $0) }
+    @ObservationIgnored private var idleSince: [String: Date] = [:]
+    @ObservationIgnored private var lastDigest = UserDefaults.standard.object(forKey: "lastDigest") as? Date {
+        didSet { UserDefaults.standard.set(lastDigest, forKey: "lastDigest") }
+    }
+    /// ponytail: `--fake-digest` sends the Forgotten digest at the first tick, to test it without waiting for 17:00.
+    @ObservationIgnored private var fakeDigest = CommandLine.arguments.contains("--fake-digest")
     /// Names Forgotten never lists again (Keep). Starts with tools that detach on purpose.
     private(set) var kept = UserDefaults.standard.stringArray(forKey: "forgottenKept") ?? Forgotten.defaultKept {
         didSet { UserDefaults.standard.set(kept, forKey: "forgottenKept") }
@@ -173,6 +182,10 @@ enum Tab: String, CaseIterable, Identifiable {
         if isApp { Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) } }
         DisplayKeys.handler = { [weak self] key, flags in self?.handleKey(key, flags) ?? false }
         if displayKeys { DisplayKeys.start(prompt: false); Task { await refreshScreens() } }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            MainActor.assumeIsolated { self?.noteFront(app) }
+        }
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if let self, self.displayKeys { Task { await self.refreshScreens() } } }  // Controls re-reads on open
         }
@@ -255,10 +268,14 @@ enum Tab: String, CaseIterable, Identifiable {
         // so sampling still runs when the Mac is busy: exactly when Strain matters.
         let keep = Set(kept)
         var (s, procs, srv, ticks, lost) = await Task.detached(priority: .utility) {
-            let procs = sampleProcesses()
-            return (SystemSample.read(), procs, sampleServers(procs: procs), readCoreTicks(), Forgotten.terminalClosed(procs, me: getuid(), kept: keep))
+            let procs = sampleProcesses(), srv = sampleServers(procs: procs)
+            // ponytail: launchctl runs at most once a tick, and only when a candidate needs checking
+            var cached: Set<Int32>?
+            let jobs = { cached ?? { cached = Forgotten.launchdJobs(); return cached! }() }
+            let lost = Forgotten.terminalClosed(procs, me: getuid(), kept: keep, jobs: jobs).map { Lost(group: $0, reason: .terminalClosed) }
+                + Forgotten.oldServers(srv, parents: Dictionary(procs.map { ($0.pid, $0.ppid) }, uniquingKeysWith: { a, _ in a }), me: getuid(), jobs: jobs)
+            return (SystemSample.read(), procs, srv, readCoreTicks(), lost)
         }.value
-        forgotten = lost
         if fakeRed { s.pressure = 4 }
         servers = srv
         let now = Date.now
@@ -273,6 +290,7 @@ enum Tab: String, CaseIterable, Identifiable {
         keysBlocked = displayKeys && !DisplayKeys.running
         applyAWDL()
         apply(s, procs, at: now)
+        refreshForgotten(procs, found: lost, at: now)
         record(ticks, s, at: now)  // after apply: the history point carries this sample's swap rate
         if isApp {
             try? FileManager.default.createDirectory(at: Store.statusFile.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -335,17 +353,67 @@ enum Tab: String, CaseIterable, Identifiable {
         loadingBackground = false
     }
 
-    /// Keep: this name never shows in Forgotten again, until un-kept in the ⋯ menu.
-    func keep(_ name: String) {
-        if !kept.contains(name) { kept.append(name) }
-        forgotten.removeAll { $0.name == name }
+    /// Adds unused apps and idle memory to what the sampler found (terminal closed, old servers), then the digest.
+    private func refreshForgotten(_ procs: [Proc], found: [Lost], at now: Date) {
+        let ws = NSWorkspace.shared
+        if let id = ws.frontmostApplication?.bundleIdentifier { lastFront[id] = now }
+        let regular = ws.runningApplications.filter { $0.activationPolicy == .regular }
+        let apps = regular.compactMap { a in
+            a.bundleURL.map { Forgotten.App(bundlePath: $0.path, bundleID: a.bundleIdentifier ?? "", launched: a.launchDate) }
+        }
+        for app in apps where lastFront[app.bundleID] == nil { lastFront[app.bundleID] = now }  // count from first sight, not launch
+        let bundles = Set(apps.map(\.bundlePath)), appPIDs = Set(regular.map(\.processIdentifier))
+        let atLogin = Set((background ?? []).filter { $0.kind == .openAtLogin }.compactMap { $0.url.map(localPath) })
+        let appOwned = Set(groups.filter { $0.bundle.map(bundles.contains) ?? false }.map(\.name))
+            .union(procs.filter { appPIDs.contains($0.ppid) }.map { owner(of: $0.path).name })
+        idleSince = Forgotten.trackIdle(groups, idleSince, now: now)
+        forgotten = Forgotten.merge([
+            found.filter { if case .terminalClosed = $0.reason { true } else { false } },
+            Forgotten.unusedApps(apps, lastFront: lastFront, groups: groups, skip: atLogin, now: now),
+            found.filter { if case .server = $0.reason { true } else { false } },
+            Forgotten.idleMemory(groups, idleSince: idleSince, appOwned: appOwned, me: getuid(), now: now),
+        ], kept: Set(kept))
+        if isApp { UserDefaults.standard.set(lastFront.mapValues(\.timeIntervalSince1970), forKey: "lastFront") }
+        sendDigestIfDue(at: now)
+    }
+
+    /// The app that just came to the front, and the one it replaced, were both in use until now.
+    private func noteFront(_ app: NSRunningApplication?) {
+        let now = Date.now
+        if let id = NSWorkspace.shared.frontmostApplication?.bundleIdentifier { lastFront[id] = now }
+        if let id = app?.bundleIdentifier { lastFront[id] = now }
+        forgotten.removeAll { $0.group.bundle != nil && $0.group.bundle == app?.bundleURL?.path }  // you just used it
+    }
+
+    /// Once a day after `Thresholds.digestHour`, when something is forgotten: one notification. Deletes nothing.
+    private func sendDigestIfDue(at now: Date) {
+        let forced = fakeDigest
+        fakeDigest = false
+        let cal = Calendar.current
+        guard forced || (!forgotten.isEmpty && cal.component(.hour, from: now) >= Thresholds.digestHour
+                         && !(lastDigest.map { cal.isDate($0, inSameDayAs: now) } ?? false)),
+              UserDefaults.standard.string(forKey: "notify") != "off" else { return }
+        lastDigest = now
+        let title = forgotten.isEmpty ? "Strain: nothing forgotten" : "Strain: \(forgotten.count) still running"
+        let body = forgotten.isEmpty ? "Nothing you started is sitting idle." : Forgotten.digest(forgotten, title: self.title) + ". Quit or keep them in Strain's Apps tab."
+        guard isApp else { return print("\(title)\n\(body)") }
+        let content = UNMutableNotificationContent()
+        (content.title, content.body) = (title, body)
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "forgotten-digest", content: content, trigger: nil))
+    }
+
+    /// Keep: never listed in Forgotten again, until un-kept in the ⋯ menu.
+    func keep(_ l: Lost) {
+        if !kept.contains(l.keepKey) { kept.append(l.keepKey) }
+        forgotten.removeAll { $0.keepKey == l.keepKey }
     }
     func unkeep(_ name: String) { kept.removeAll { $0 == name } }
 
-    /// Quit, after the confirm: SIGTERM to the processes still running under this name.
-    func quitForgotten(_ g: Group) {
-        perform(.terminate(g.pids), on: g)
-        forgotten.removeAll { $0.name == g.name }
+    /// Quit, after the confirm: the same action the Apps list uses (app quit, SIGTERM to your own processes,
+    /// or shutting simulators down).
+    func quitForgotten(_ l: Lost) {
+        perform(action(for: l.group), on: l.group)
+        forgotten.removeAll { $0.id == l.id }
     }
 
     /// Gatekeeper and codesign on each item's program, off the main thread (~100 ms each, so a few seconds in all).
@@ -650,6 +718,7 @@ enum Tab: String, CaseIterable, Identifiable {
             String(format: "Swap: %@ GB used, swapping %.0f MB/min", gb(s.swapUsedMB), monitor.swapRate),
             String(format: "CPU: load %.1f on %d cores", s.load, s.cores),
             "Disk: \(Disk.read().summary)",  // fresh: `disk` only updates with the Clean tab
+            "Forgotten: \(forgotten.isEmpty ? "none" : Forgotten.digest(forgotten, title: title))",
             "Keep awake: \(awakeUntil.map { $0 == .distantFuture ? "on, indefinitely" : "on until \($0.formatted(date: .omitted, time: .shortened))" } ?? "off")",
             "", "Top by memory:",
         ]
@@ -676,7 +745,7 @@ enum Tab: String, CaseIterable, Identifiable {
         if fakeRed { s.pressure = 4 }
         let procs = sampleProcesses()
         servers = sampleServers(procs: procs)
-        forgotten = Forgotten.terminalClosed(procs, me: getuid(), kept: Set(kept))
+        forgotten = Forgotten.terminalClosed(procs, me: getuid(), kept: Set(kept)).map { Lost(group: $0, reason: .terminalClosed) }
         for i in 0..<3 {  // three readings = two history points, enough to draw the charts
             record(readCoreTicks(), s, at: .now - Double(2 - i) * 1.5)
             Thread.sleep(forTimeInterval: 0.4)

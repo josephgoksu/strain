@@ -17,6 +17,7 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 - Old logs in Clean: log files and crash reports older than 30 days.
 - Background badges: Leftover (its app or launch file is gone), Not notarized (apps Gatekeeper rejects), Unsigned (programs with no valid signature).
 - Forgotten, at the top of Apps: command-line programs still running 2 h after their terminal closed, with Quit and Keep. Tools that detach on purpose (tmux, gpg-agent) start kept.
+- Forgotten also lists apps not used for 4 h, programs idling on 500 MB+ for 2 h, and dev servers up 12 h+ (launchd-run ones excluded), with one digest notification a day after 17:00.
 - Plain English explanation for whisper-cli.
 
 ### Changed
