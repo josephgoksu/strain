@@ -20,7 +20,7 @@ enum Space {
     /// The `limit` largest folders exactly two levels down (`~/Library/Developer`, `~/Development/products`), so the
     /// list points at something you can act on, not at "Library".
     static func largestFolders(home: String = NSHomeDirectory(), limit: Int = 10) -> [SpaceEntry] {
-        let found = subfolders(home).flatMap { top in
+        let found = subfolders(home).filter { !skipped.contains(relative($0, home)) }.flatMap { top in
             subfolders(top).filter { !skipped.contains(relative($0, home)) }.map { SpaceEntry(path: $0, size: Cleanup.size(of: URL(fileURLWithPath: $0))) }
         }
         return Array(found.filter { $0.size > 0 }.sorted { $0.size > $1.size }.prefix(limit))

@@ -16,7 +16,9 @@ enum Thresholds {
     static let checkMinGB = 5.0          // …and only notifies when at least this much can go
     static let forgottenAfter = 7200.0   // terminal-closed or idle for less than this isn't "forgotten" yet
     static let unusedAppHours = 4.0      // an app not brought to the front for this long is unused
-    static let idleMemoryMB = 500.0      // idle memory: holding at least this at under 1% CPU
+    static let idleMemoryMB = 500.0      // idle memory: holding at least this…
+    static let idleCPU = 1.0             // …at under this % CPU
+    static let oldLogDays = 30.0         // Old logs: files in ~/Library/Logs untouched this long
     static let oldServerHours = 12.0     // a dev server up this long is probably left over
     static let digestHour = 17           // the daily Forgotten notification comes at the first tick after this hour
     static let oldDownloadDays = 90.0    // a Downloads item nobody opened or changed for this long counts as old

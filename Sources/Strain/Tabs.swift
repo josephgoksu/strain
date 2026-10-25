@@ -1154,7 +1154,7 @@ struct AwakeCard: View {
                     Text("Keep this Mac awake").font(.callout.weight(.semibold))
                     SwiftUI.Group {
                         if let until, until != .distantFuture {
-                            Text("Until \(until.formatted(date: .omitted, time: .shortened)) · ") + Text(timerInterval: Date.now...until, countsDown: true) + Text(" left")
+                            Text("Until \(until.formatted(date: .omitted, time: .shortened)) · ") + Text(timerInterval: Date.now...max(until, .now), countsDown: true) + Text(" left")
                         } else {
                             Text(until == nil ? "Off: the Mac sleeps as usual" : "On until you stop it")
                         }

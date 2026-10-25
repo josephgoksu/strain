@@ -1,4 +1,5 @@
 import AppKit
+import os
 
 /// One thing you started and forgot, and why Strain thinks so.
 struct Lost: Identifiable, Equatable {
@@ -69,8 +70,9 @@ enum Forgotten {
     static func unusedApps(_ apps: [App], lastFront: [String: Date], groups: [Group], skip: Set<String>, now: Date,
                            hours: Double = Thresholds.unusedAppHours) -> [Lost] {
         apps.compactMap { app in
+            // Never earlier than this launch: an app relaunched in the background isn't days unused.
             guard !neverBundles.contains(app.bundleID), !skip.contains(app.bundlePath),
-                  let since = lastFront[app.bundleID] ?? app.launched, now.timeIntervalSince(since) >= hours * 3600,
+                  let since = [lastFront[app.bundleID], app.launched].compactMap({ $0 }).max(), now.timeIntervalSince(since) >= hours * 3600,
                   let g = groups.first(where: { $0.bundle == app.bundlePath }) else { return nil }
             return Lost(group: g, reason: .unused(since: since))
         }
@@ -81,8 +83,27 @@ enum Forgotten {
     /// Which groups hold `Thresholds.idleMemoryMB`+ at under 1% CPU, and since when. Call each tick.
     static func trackIdle(_ groups: [Group], _ since: [String: Date], now: Date) -> [String: Date] {
         var next: [String: Date] = [:]
-        for g in groups where g.rssKB >= Int(Thresholds.idleMemoryMB) * 1024 && g.cpu < 1 { next[g.name] = since[g.name] ?? now }
+        for g in groups where g.rssKB >= Int(Thresholds.idleMemoryMB) * 1024 && g.cpu < Thresholds.idleCPU { next[g.name] = since[g.name] ?? now }
         return next
+    }
+
+    /// Group names with a process an app started, at any depth (an editor → its extension host → gopls).
+    static func appOwned(_ procs: [Proc], appPIDs: Set<Int32>) -> Set<String> {
+        let parents = parentMap(procs)
+        return Set(procs.filter { descends($0.pid, from: appPIDs, parents: parents) }.map { owner(of: $0.path).name })
+    }
+
+    static func parentMap(_ procs: [Proc]) -> [Int32: Int32] { Dictionary(procs.map { ($0.pid, $0.ppid) }, uniquingKeysWith: { a, _ in a }) }
+
+    /// Whether `pid` or one of its ancestors (up to launchd) is in `ancestors`.
+    static func descends(_ pid: Int32, from ancestors: Set<Int32>, parents: [Int32: Int32]) -> Bool {
+        var p = pid
+        for _ in 0..<8 {
+            if ancestors.contains(p) { return true }
+            guard let up = parents[p], up > 1 else { return false }
+            p = up
+        }
+        return false
     }
 
     /// Idle long enough, mine, and not an app or an app's helper: apps are judged by use (signal 2), and a helper
@@ -106,12 +127,7 @@ enum Forgotten {
         guard !old.isEmpty else { return [] }
         let agents = jobs()
         // A launchd job often runs a script that starts the server: check the chain up to launchd.
-        func underJob(_ pid: Int32) -> Bool {
-            var p = pid
-            for _ in 0..<6 { if agents.contains(p) { return true }; guard let up = parents[p], up > 1 else { return false }; p = up }
-            return false
-        }
-        return old.filter { !underJob($0.pid) }.map { s in
+        return old.filter { !descends($0.pid, from: agents, parents: parents) }.map { s in
             Lost(group: Group(name: owner(of: s.path).name, path: s.path, rssKB: s.rssKB, seconds: s.seconds, pids: [s.pid], uids: [s.uid]),
                  reason: .server(ports: s.ports), label: s.project)
         }
@@ -131,10 +147,15 @@ enum Forgotten {
         .sorted { $0.group.rssKB > $1.group.rssKB }
     }
 
-    /// PIDs of your launchd jobs (`launchctl list`: "PID Status Label", "-" when not running).
+    /// PIDs of your launchd jobs (`launchctl list`: "PID Status Label", "-" when not running). Cached a minute: a
+    /// long-running launchd server would otherwise cost a spawn every tick, and every rule waits hours anyway.
     static func launchdJobs() -> Set<Int32> {
-        Set(run("/bin/launchctl", ["list"]).split(separator: "\n").compactMap { Int32($0.split(separator: "\t").first ?? "") })
+        if let (at, pids) = jobsCache.withLock({ $0 }), Date.now.timeIntervalSince(at) < 60 { return pids }
+        let pids = Set(run("/bin/launchctl", ["list"]).split(separator: "\n").compactMap { Int32($0.split(separator: "\t").first ?? "") })
+        jobsCache.withLock { $0 = (.now, pids) }
+        return pids
     }
+    private static let jobsCache = OSAllocatedUnfairLock<(Date, Set<Int32>)?>(initialState: nil)
 
     /// The digest text: "vite 3h, Docker 6h, Ollama 2h · 3.1 GB".
     static func digest(_ items: [Lost], title: (Group) -> String, now: Date = .now) -> String {

@@ -197,3 +197,36 @@ import Testing
                                 title: { $0.name }, now: now)
     #expect(text == "ollama 2h 0m · 2.0 GB")
 }
+
+@Test func aRelaunchedAppIsNotDaysUnused() {
+    let now = Date.now
+    let slack = Forgotten.App(bundlePath: "/Applications/Slack.app", bundleID: "com.tinyspeck.slackmacgap", launched: now - 60)
+    let g = Group(name: "Slack", bundle: slack.bundlePath, path: slack.bundlePath, rssKB: 500_000, pids: [3])
+    #expect(Forgotten.unusedApps([slack], lastFront: [slack.bundleID: now - 3 * 86400], groups: [g], skip: [], now: now).isEmpty)
+}
+
+@Test func helpersOfHelpersBelongToTheApp() {
+    // VS Code (10) → extension host (11) → gopls (12); a terminal-less ollama (20) under launchd.
+    let procs = [Proc(pid: 10, uid: 501, cpu: 0, rssKB: 1, seconds: 1, path: "/Applications/Code.app/Contents/MacOS/Electron", ppid: 1),
+                 Proc(pid: 11, uid: 501, cpu: 0, rssKB: 1, seconds: 1, path: "/Applications/Code.app/Contents/Frameworks/Code Helper (Plugin).app/Contents/MacOS/Code Helper (Plugin)", ppid: 10),
+                 Proc(pid: 12, uid: 501, cpu: 0, rssKB: 1, seconds: 1, path: "/Users/x/go/bin/gopls", ppid: 11),
+                 Proc(pid: 20, uid: 501, cpu: 0, rssKB: 1, seconds: 1, path: "/opt/homebrew/bin/ollama", ppid: 1)]
+    let owned = Forgotten.appOwned(procs, appPIDs: [10])
+    #expect(owned.contains("gopls") && !owned.contains("ollama"))
+}
+
+@Test func anotherAccountsItemIsNeverLeftover() {
+    #expect(otherUsersPath("/Users/502/Library/LaunchAgents/x.plist") && !otherUsersPath("/Users/joseph/Library/x") && !otherUsersPath("/Applications/X.app"))
+    let item = BackgroundItem(name: "x", kind: .agent, status: .on, url: "/Users/4242/Library/LaunchAgents/x.plist")
+    #expect(!item.missing)
+}
+
+@Test func measureSkipsTheTrash() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent("strain-trash-\(UUID())").path
+    defer { try? FileManager.default.removeItem(atPath: home) }
+    for dir in [".Trash/Old.app", "Development/site"] {
+        try FileManager.default.createDirectory(atPath: home + "/" + dir, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: home + "/" + dir + "/f", contents: Data(count: 64 * 1024))
+    }
+    #expect(Space.largestFolders(home: home).map { Space.relative($0.path, home) } == ["Development/site"])
+}

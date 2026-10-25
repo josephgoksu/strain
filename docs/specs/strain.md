@@ -311,7 +311,7 @@ Design and the slices still to build: `2026-10-25-weekly-check-design.md`.
 | Part | What |
 |---|---|
 | Check now | Clean's header: measures every section, then names the three largest parts and when it was checked (the total already heads the tab). Opening Clean the first time counts as a check |
-| Weekly | At most once in `Thresholds.checkDays` (7) since any check, only on AC power, only while the level is green, never in a snapshot. Notifies once when `Thresholds.checkMinGB` (5 GB) or more can go; follows the Notifications setting |
+| Weekly | At most once in `Thresholds.checkDays` (7) since any check, only on AC power, only while the level is green, never in a snapshot. Notifies once when `Thresholds.checkMinGB` (5 GB) or more can go *now*: stale build folders only, and no caches of AI apps that are open. Only with Notifications = Under Strain or Worse |
 | Never | Deletes. Cleaning stays a click and a confirm in Clean |
 | Test | `--fake-week` runs it at the first tick and always notifies (prints under `swift run`) |
 
@@ -349,7 +349,7 @@ Bottom of Clean, on a click only (Measure): about a minute of disk walking, and 
 | Leftover | Background badge: the item's app, program or launch file is gone, so it can't run. Helpers listed relative to their app ("Contents/Library/LoginItems/X.app") resolve through their parent record; "/Users/<uid>" maps to the real home |
 | Not notarized | Background badge for `.app` targets Gatekeeper (`spctl --assess --type execute`) doesn't accept. A local build of your own app shows it too |
 | Unsigned | Background badge for bare programs (Mach-O) with no valid signature (`codesign --verify`). Gatekeeper can't assess those ("not an app"). Scripts get no badge |
-| Cost | Signatures checked off the main thread when the list loads, ~100 ms per item |
+| Cost | Gatekeeper takes up to 10 s for a big app (Xcode), so results are cached per path in `signingCache` and re-checked only when the app's Info.plist (or the program) changes. Another account's `/Users/<uid>` items are never judged Leftover |
 
 ## 28. Forgotten: terminal closed (2026-10-25)
 
@@ -366,11 +366,11 @@ Design and later slices: `2026-10-25-forgotten-design.md`.
 
 | Signal | Rule |
 |---|---|
-| Unused app | Dock app not in front for `Thresholds.unusedAppHours` (4 h). Front times from `didActivateApplicationNotification` plus each tick, saved in `lastFront`; an app Strain hasn't seen counts from first sight. Never Finder, Strain, menu bar apps or apps that open at login |
-| Idle memory | A group of yours with ≥ `idleMemoryMB` (500 MB) under 1% CPU for 2 h, that isn't an app or a helper an app started (a language server under an editor). The iOS Simulator counts |
+| Unused app | Dock app not in front for `Thresholds.unusedAppHours` (4 h). Front times from `didActivateApplicationNotification` plus each tick, saved in `lastFront`; an app Strain hasn't seen counts from first sight, and never from before its current launch. Saved at minute precision. Never Finder, Strain, menu bar apps or apps that open at login |
+| Idle memory | A group of yours with ≥ `idleMemoryMB` (500 MB) under 1% CPU for 2 h, that isn't an app or anything an app started, at any depth (editor → extension host → language server). The iOS Simulator counts |
 | Old dev server | A `.dev` server of yours up ≥ `oldServerHours` (12 h), unless a launchd job runs it, directly or through a script (parent chain checked). Quit reaches only the server's process |
 | One row per process | First signal wins: terminal closed, unused app, old server, idle memory. Keep remembers a server's project, else the name |
-| Digest | Once a day at the first tick after `digestHour` (17:00) when anything is listed: "3 still running: vite 3h, Xcode 6h, ollama 2h · 3.1 GB". `--fake-digest` sends it at the first tick. Follows Notifications |
+| Digest | Once a day at the first tick after `digestHour` (17:00) when anything is listed: "3 still running: vite 3h, Xcode 6h, ollama 2h · 3.1 GB". `--fake-digest` sends it at the first tick. Only with Notifications = Under Strain or Worse |
 | Report | `Strain --report` has a Forgotten line |
-| Cost | `launchctl list` at most once a tick, only when a candidate needs it |
+| Cost | `launchctl list` only when a candidate needs it, cached a minute |
 

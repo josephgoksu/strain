@@ -51,7 +51,8 @@ struct BackgroundItem: Identifiable, Equatable {
 
     /// Its app, program or launch file is gone, so it can't run: a leftover of a removed app. macOS keeps the entry anyway.
     var missing: Bool {
-        [url.map(localPath), target].compactMap { $0 }.filter { $0.hasPrefix("/") }.contains { !FileManager.default.fileExists(atPath: $0) }
+        [url.map(localPath), target].compactMap { $0 }.filter { $0.hasPrefix("/") && !otherUsersPath($0) }
+            .contains { !FileManager.default.fileExists(atPath: $0) }
     }
 
     /// The item's own name, unless it's just the interpreter that runs it ("bash" says nothing about the job).
@@ -128,6 +129,13 @@ func parseBTM(_ text: String) -> [BackgroundItem] {
     }
 }
 
+/// "/Users/<uid>/…" that `localPath` couldn't map: another account's item. Its real home isn't known, so it can't be
+/// judged missing.
+func otherUsersPath(_ path: String) -> Bool {
+    let parts = path.split(separator: "/", maxSplits: 2)
+    return parts.count > 1 && parts[0] == "Users" && parts[1].allSatisfy(\.isNumber)
+}
+
 /// Login Items writes the home folder as "/Users/<uid>"; on disk it's the real home.
 func localPath(_ path: String) -> String {
     let uidHome = "/Users/\(getuid())/"
@@ -146,10 +154,17 @@ enum Signing {
         return exitStatus("/usr/bin/codesign", ["--verify", path]) == 0 ? nil : "Unsigned"
     }
 
+    /// Changes when the program does: an app's Info.plist (rewritten by every update), else the file itself.
+    static func stamp(_ path: String) -> String {
+        let file = path.hasSuffix(".app") ? path + "/Contents/Info.plist" : path
+        let date = (try? FileManager.default.attributesOfItem(atPath: file))?[.modificationDate] as? Date
+        return String(Int(date?.timeIntervalSince1970 ?? 0))
+    }
+
     static func isMachO(_ path: String) -> Bool {
         guard let h = FileHandle(forReadingAtPath: path), let d = try? h.read(upToCount: 4), d.count == 4 else { return false }
         try? h.close()
-        let magic = d.withUnsafeBytes { $0.load(as: UInt32.self) }
+        let magic = d.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }
         return [0xFEEDFACF, 0xCFFAEDFE, 0xCAFEBABE, 0xBEBAFECA, 0xFEEDFACE, 0xCEFAEDFE].contains(magic)
     }
 }

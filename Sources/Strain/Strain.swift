@@ -71,8 +71,11 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var background: [BackgroundItem]?   // nil until the Background tab is first opened (~3 s read)
     private(set) var loadingBackground = false
     private(set) var backgroundRead: Date?           // when the shown list was read (it may come from the cache)
-    private(set) var backgroundFailed = false
-    private(set) var signing: [String: String] = [:]  // item target path → "Not notarized" / "Unsigned"; absent = fine or unchecked        // last read was cancelled or timed out
+    private(set) var backgroundFailed = false        // last read was cancelled or timed out
+    private(set) var signing: [String: String] = [:]  // item target path → "Not notarized" / "Unsigned"; absent = fine or unchecked
+    /// target path → "<modified>|<badge>": Gatekeeper takes seconds per big app (10 s for Xcode), so each is checked
+    /// again only when it changes.
+    @ObservationIgnored private var signingCache = UserDefaults.standard.dictionary(forKey: "signingCache") as? [String: String] ?? [:]
     private(set) var cores: [Double] = []            // busy fraction per core over the last interval
     private(set) var history: [HistoryPoint] = []    // last 10 minutes, one point per tick
     private(set) var swapInRate = 0.0                // MB/min read back from swap
@@ -86,9 +89,9 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var simulators: [Simulator] = []
     private(set) var runtimes: [SimRuntime] = []          // simulator runtimes no simulator uses
     private(set) var aiData: [String: (size: Int64, models: [String])] = [:]  // AIData.id → size, model names; data, never cleaned
-    private(set) var archives: Int64 = 0
+    private(set) var archives: Int64 = 0                  // Xcode Archives: your shipped builds, data, so Reveal only
     private(set) var space: (folders: [SpaceEntry], downloads: [SpaceEntry])?  // nil until "Measure" is clicked
-    private(set) var measuringSpace = false                  // Xcode Archives: your shipped builds, data, so Reveal only
+    private(set) var measuringSpace = false
     let devRoots = DevCleanup.roots()
     private(set) var wifi: Bool?                      // nil = unknown (no Wi-Fi hardware, or not read yet)
     private(set) var bluetooth: Bool?
@@ -269,11 +272,8 @@ enum Tab: String, CaseIterable, Identifiable {
         let keep = Set(kept)
         var (s, procs, srv, ticks, lost) = await Task.detached(priority: .utility) {
             let procs = sampleProcesses(), srv = sampleServers(procs: procs)
-            // ponytail: launchctl runs at most once a tick, and only when a candidate needs checking
-            var cached: Set<Int32>?
-            let jobs = { cached ?? { cached = Forgotten.launchdJobs(); return cached! }() }
-            let lost = Forgotten.terminalClosed(procs, me: getuid(), kept: keep, jobs: jobs).map { Lost(group: $0, reason: .terminalClosed) }
-                + Forgotten.oldServers(srv, parents: Dictionary(procs.map { ($0.pid, $0.ppid) }, uniquingKeysWith: { a, _ in a }), me: getuid(), jobs: jobs)
+            let lost = Forgotten.terminalClosed(procs, me: getuid(), kept: keep).map { Lost(group: $0, reason: .terminalClosed) }
+                + Forgotten.oldServers(srv, parents: Forgotten.parentMap(procs), me: getuid())
             return (SystemSample.read(), procs, srv, readCoreTicks(), lost)
         }.value
         if fakeRed { s.pressure = 4 }
@@ -356,16 +356,22 @@ enum Tab: String, CaseIterable, Identifiable {
     /// Adds unused apps and idle memory to what the sampler found (terminal closed, old servers), then the digest.
     private func refreshForgotten(_ procs: [Proc], found: [Lost], at now: Date) {
         let ws = NSWorkspace.shared
-        if let id = ws.frontmostApplication?.bundleIdentifier { lastFront[id] = now }
         let regular = ws.runningApplications.filter { $0.activationPolicy == .regular }
         let apps = regular.compactMap { a in
             a.bundleURL.map { Forgotten.App(bundlePath: $0.path, bundleID: a.bundleIdentifier ?? "", launched: a.launchDate) }
         }
-        for app in apps where lastFront[app.bundleID] == nil { lastFront[app.bundleID] = now }  // count from first sight, not launch
-        let bundles = Set(apps.map(\.bundlePath)), appPIDs = Set(regular.map(\.processIdentifier))
+        // Minute precision is plenty against a 4 h limit, and keeps the saved copy from being rewritten every tick.
+        var changed = false
+        for id in apps.map(\.bundleID) + [ws.frontmostApplication?.bundleIdentifier].compactMap({ $0 }) {
+            let front = id == ws.frontmostApplication?.bundleIdentifier
+            guard front ? now.timeIntervalSince(lastFront[id] ?? .distantPast) > 60 : lastFront[id] == nil else { continue }
+            lastFront[id] = now  // the app in front: now; any other new app: count from first sight, not launch
+            changed = true
+        }
+        let bundles = Set(apps.map(\.bundlePath))
         let atLogin = Set((background ?? []).filter { $0.kind == .openAtLogin }.compactMap { $0.url.map(localPath) })
         let appOwned = Set(groups.filter { $0.bundle.map(bundles.contains) ?? false }.map(\.name))
-            .union(procs.filter { appPIDs.contains($0.ppid) }.map { owner(of: $0.path).name })
+            .union(Forgotten.appOwned(procs, appPIDs: Set(regular.map(\.processIdentifier))))
         idleSince = Forgotten.trackIdle(groups, idleSince, now: now)
         forgotten = Forgotten.merge([
             found.filter { if case .terminalClosed = $0.reason { true } else { false } },
@@ -373,15 +379,13 @@ enum Tab: String, CaseIterable, Identifiable {
             found.filter { if case .server = $0.reason { true } else { false } },
             Forgotten.idleMemory(groups, idleSince: idleSince, appOwned: appOwned, me: getuid(), now: now),
         ], kept: Set(kept))
-        if isApp { UserDefaults.standard.set(lastFront.mapValues(\.timeIntervalSince1970), forKey: "lastFront") }
+        if isApp, changed { UserDefaults.standard.set(lastFront.mapValues(\.timeIntervalSince1970), forKey: "lastFront") }
         sendDigestIfDue(at: now)
     }
 
-    /// The app that just came to the front, and the one it replaced, were both in use until now.
+    /// The app that just came to the front is in use. (The one it replaced was stamped by the ticks while in front.)
     private func noteFront(_ app: NSRunningApplication?) {
-        let now = Date.now
-        if let id = NSWorkspace.shared.frontmostApplication?.bundleIdentifier { lastFront[id] = now }
-        if let id = app?.bundleIdentifier { lastFront[id] = now }
+        if let id = app?.bundleIdentifier { lastFront[id] = .now }
         forgotten.removeAll { $0.group.bundle != nil && $0.group.bundle == app?.bundleURL?.path }  // you just used it
     }
 
@@ -392,7 +396,7 @@ enum Tab: String, CaseIterable, Identifiable {
         let cal = Calendar.current
         guard forced || (!forgotten.isEmpty && cal.component(.hour, from: now) >= Thresholds.digestHour
                          && !(lastDigest.map { cal.isDate($0, inSameDayAs: now) } ?? false)),
-              UserDefaults.standard.string(forKey: "notify") != "off" else { return }
+              Store.notifyAll else { return }
         lastDigest = now
         let title = forgotten.isEmpty ? "Strain: nothing forgotten" : "Strain: \(forgotten.count) still running"
         let body = forgotten.isEmpty ? "Nothing you started is sitting idle." : Forgotten.digest(forgotten, title: self.title) + ". Quit or keep them in Strain's Apps tab."
@@ -418,10 +422,17 @@ enum Tab: String, CaseIterable, Identifiable {
 
     /// Gatekeeper and codesign on each item's program, off the main thread (~100 ms each, so a few seconds in all).
     func checkSigning() async {
-        let targets = Set((background ?? []).filter { !$0.missing }.compactMap(\.target))
-        signing = await Task.detached(priority: .utility) {
-            Dictionary(uniqueKeysWithValues: targets.compactMap { t in Signing.badge(t).map { (t, $0) } })
+        let targets = Set((background ?? []).filter { !$0.missing }.compactMap(\.target)), cache = signingCache
+        let fresh = await Task.detached(priority: .utility) {
+            Dictionary(uniqueKeysWithValues: targets.map { t in
+                let stamp = Signing.stamp(t)
+                if let hit = cache[t], hit.hasPrefix(stamp + "|") { return (t, hit) }
+                return (t, stamp + "|" + (Signing.badge(t) ?? ""))
+            })
         }.value
+        signingCache = fresh
+        if isApp { UserDefaults.standard.set(fresh, forKey: "signingCache") }
+        signing = fresh.compactMapValues { v in v.split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false).last.map(String.init).flatMap { $0.isEmpty ? nil : $0 } }
     }
 
     /// Sizes every Clean item off the main thread (seconds on a big cache folder). One scan at a time.
@@ -465,24 +476,30 @@ enum Tab: String, CaseIterable, Identifiable {
         let forced = fakeWeek
         fakeWeek = false
         await checkNow()
-        guard forced || Double(cleanable) >= Thresholds.checkMinGB * 1e9,
-              UserDefaults.standard.string(forKey: "notify") != "off" else { return }
-        let title = "Strain: \(formatBytes(cleanable)) to clean"
-        let body = Store.checkLine(cleanParts) + ". Open Strain's Clean tab to choose what goes."
+        let parts = cleanParts, total = parts.reduce(0) { $0 + $1.bytes }
+        guard forced || Double(total) >= Thresholds.checkMinGB * 1e9, Store.notifyAll else { return }
+        let title = "Strain: \(formatBytes(total)) to clean"
+        let body = Store.checkLine(parts) + ". Open Strain's Clean tab to choose what goes."
         guard isApp else { return print("\(title)\n\(body)") }
         let content = UNMutableNotificationContent()
         (content.title, content.body) = (title, body)
         try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "weekly-check", content: content, trigger: nil))
     }
 
-    /// Every Clean section's total, largest first: each cache, build folders, simulators.
+    /// What a click can free right now, largest first: caches (not of AI apps that are open: they refuse), stale
+    /// build folders (Clean's button skips active projects), simulators, unused runtimes.
     var cleanParts: [(title: String, bytes: Int64)] {
-        var parts = Cleanup.items.map { ($0.bundleID == nil ? $0.title : $0.title + " caches", cleanSizes?[$0.id] ?? 0) }
-        parts.append(("Project build folders", (projects ?? []).reduce(0) { $0 + $1.size }))
+        let open = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
+        var parts = Cleanup.items.filter { !($0.bundleID.map(open.contains) ?? false) }
+            .map { ($0.bundleID == nil ? $0.title : $0.title + " caches", cleanSizes?[$0.id] ?? 0) }
+        parts.append(("Stale build folders", (projects ?? []).filter { $0.stale() && !running($0) }.reduce(0) { $0 + $1.size }))
         parts.append(("Simulators", simulators.reduce(0) { $0 + $1.size }))
         parts.append(("Unused simulator runtimes", runtimes.reduce(0) { $0 + $1.size }))
         return parts.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.map { (title: $0.0, bytes: $0.1) }
     }
+
+    /// Notifications setting "Under Strain or Worse" (the default): the weekly check and the daily digest only come then.
+    static var notifyAll: Bool { (UserDefaults.standard.string(forKey: "notify") ?? "all") == "all" }
 
     /// "Simulators 4.3 GB, iOS DeviceSupport 5.6 GB, Go build cache 1 GB": the three largest parts.
     static func checkLine(_ parts: [(title: String, bytes: Int64)]) -> String {

@@ -11,7 +11,7 @@ struct AIData: Identifiable {
     enum ModelLayout { case ollama, huggingFace, lmStudio }
 
     static let all: [AIData] = [
-        .init(id: "claudevm", title: "Claude sandbox", detail: "The Linux VM Claude runs code in. Claude manages it: remove it from Claude's settings, not by hand.",
+        .init(id: "claudevm", title: "Claude sandbox", detail: "The Linux VM Claude runs code in. Claude manages it; deleting it by hand can break Claude's sandbox.",
               symbol: "shippingbox", rel: "Library/Application Support/Claude/vm_bundles"),
         .init(id: "claudecode", title: "Claude Code sessions", detail: "Your Claude Code transcripts, per project. Resume and history read them.",
               symbol: "text.bubble", rel: ".claude/projects"),
