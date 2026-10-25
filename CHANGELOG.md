@@ -4,6 +4,8 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-25
+
 ### Added
 
 - Displays in Controls: brightness for every screen, plus volume for monitors with speakers (DDC/CI on Apple silicon).
