@@ -106,8 +106,42 @@ struct AppsTab: View {
 
     var body: some View {
         LazyVStack(spacing: 2) {
+            if !store.forgotten.isEmpty {
+                CleanSection(title: "Forgotten", symbol: "moon.zzz", detail: "\(store.forgotten.count)")
+                ForEach(store.forgotten) { ForgottenRow(group: $0) }
+                CleanSection(title: "All apps", symbol: "square.stack.3d.up")
+            }
             ForEach(store.culprits.prefix(max(rows, 12))) { AppRow(group: $0) }
         }
+    }
+}
+
+/// Still running after its terminal closed. Quit (confirmed) or Keep (never listed again).
+struct ForgottenRow: View {
+    @Environment(Store.self) private var store
+    let group: Group
+
+    var body: some View {
+        HStack(spacing: 10) {
+            SymbolTile(symbol: "terminal", tint: .orange).frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(store.title(group)).font(.body.weight(.semibold)).lineLimit(1)
+                    if group.pids.count > 1 { Text("×\(group.pids.count)").font(.caption.monospacedDigit()).foregroundStyle(.secondary) }
+                }
+                Text("Terminal closed · running \(formatDuration(group.seconds)) · \(formatMemory(kb: group.rssKB))")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .help(group.path)
+            }
+            Spacer(minLength: 6)
+            Button("Keep") { withAnimation(.snappy) { store.keep(group.name) } }
+                .buttonStyle(HoverButtonStyle()).font(.caption)
+                .help("Leave it running and never list \(store.title(group)) here again. Undo in ⋯ → Kept.")
+            ConfirmButton(title: "Quit", confirm: "Quit \(store.title(group))?", symbol: "xmark.circle.fill") {
+                withAnimation(.snappy) { store.quitForgotten(group) }
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
     }
 }
 

@@ -3,18 +3,20 @@ import Foundation
 /// One row of `ps`. CPU is ps's own decayed %CPU (100 = one core).
 struct Proc: Equatable {
     var pid: Int32, uid: UInt32, cpu: Double, rssKB: Int, seconds: Int, path: String
+    var ppid: Int32 = 0, tty = ""  // tty "??": no terminal
 }
 
-let psArgs = ["-Ao", "pid=,uid=,pcpu=,rss=,etime=,comm="]
+let psArgs = ["-Ao", "pid=,uid=,pcpu=,rss=,etime=,ppid=,tty=,comm="]
 
-/// Parses `ps -Ao pid=,uid=,pcpu=,rss=,etime=,comm=`. comm is last, so a path keeps its spaces.
+/// Parses `ps -Ao pid=,uid=,pcpu=,rss=,etime=,ppid=,tty=,comm=`. comm is last, so a path keeps its spaces.
 func parsePS(_ text: String) -> [Proc] {
     text.split(separator: "\n").compactMap { line in
-        let f = line.split(separator: " ", maxSplits: 5, omittingEmptySubsequences: true)
-        guard f.count == 6, let pid = Int32(f[0]), let uid = UInt32(f[1]), let cpu = Double(f[2]),
-              let rss = Int(f[3]), let secs = parseElapsed(String(f[4])),
-              !f[5].hasPrefix("(") else { return nil }  // "(name)": ps's mark for a process that's exiting
-        return Proc(pid: pid, uid: uid, cpu: cpu, rssKB: rss, seconds: secs, path: String(f[5]))
+        let f = line.split(separator: " ", maxSplits: 7, omittingEmptySubsequences: true)
+        guard f.count == 8, let pid = Int32(f[0]), let uid = UInt32(f[1]), let cpu = Double(f[2]),
+              let rss = Int(f[3]), let secs = parseElapsed(String(f[4])), let ppid = Int32(f[5]) else { return nil }
+        let path = f[7].drop { $0 == " " }  // ps pads the tty column
+        guard !path.hasPrefix("(") else { return nil }  // "(name)": ps's mark for a process that's exiting
+        return Proc(pid: pid, uid: uid, cpu: cpu, rssKB: rss, seconds: secs, path: String(path), ppid: ppid, tty: String(f[6]))
     }
 }
 

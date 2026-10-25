@@ -130,6 +130,10 @@ struct MoreMenu: View {
                     Button("Stop") { store.stopAwake() }
                 }
             }
+            Menu("Kept (\(store.kept.count))") {
+                Text("Never listed as forgotten. Click to list again.")
+                ForEach(store.kept, id: \.self) { name in Button(name) { store.unkeep(name) } }
+            }
             Divider()
             Toggle("Launch at Login", isOn: $store.launchAtLogin)
             Toggle("Show Culprit in Menu Bar", isOn: $menuBarText)

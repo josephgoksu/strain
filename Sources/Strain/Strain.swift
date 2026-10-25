@@ -51,6 +51,11 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var monitor = Monitor()
     private(set) var system = SystemSample.read()
     private(set) var groups: [Group] = []
+    private(set) var forgotten: [Group] = []           // still running after their terminal closed
+    /// Names Forgotten never lists again (Keep). Starts with tools that detach on purpose.
+    private(set) var kept = UserDefaults.standard.stringArray(forKey: "forgottenKept") ?? Forgotten.defaultKept {
+        didSet { UserDefaults.standard.set(kept, forKey: "forgottenKept") }
+    }
     private(set) var processCount = 0
     private(set) var servers: [Server] = []
     private(set) var updated = Date.now
@@ -248,10 +253,12 @@ enum Tab: String, CaseIterable, Identifiable {
     func tick() async {
         // Utility QoS: low priority and energy-efficient, but not confined to the efficiency cores like background,
         // so sampling still runs when the Mac is busy: exactly when Strain matters.
-        var (s, procs, srv, ticks) = await Task.detached(priority: .utility) {
+        let keep = Set(kept)
+        var (s, procs, srv, ticks, lost) = await Task.detached(priority: .utility) {
             let procs = sampleProcesses()
-            return (SystemSample.read(), procs, sampleServers(procs: procs), readCoreTicks())
+            return (SystemSample.read(), procs, sampleServers(procs: procs), readCoreTicks(), Forgotten.terminalClosed(procs, me: getuid(), kept: keep))
         }.value
+        forgotten = lost
         if fakeRed { s.pressure = 4 }
         servers = srv
         let now = Date.now
@@ -326,6 +333,19 @@ enum Tab: String, CaseIterable, Identifiable {
             await checkSigning()
         }
         loadingBackground = false
+    }
+
+    /// Keep: this name never shows in Forgotten again, until un-kept in the ⋯ menu.
+    func keep(_ name: String) {
+        if !kept.contains(name) { kept.append(name) }
+        forgotten.removeAll { $0.name == name }
+    }
+    func unkeep(_ name: String) { kept.removeAll { $0 == name } }
+
+    /// Quit, after the confirm: SIGTERM to the processes still running under this name.
+    func quitForgotten(_ g: Group) {
+        perform(.terminate(g.pids), on: g)
+        forgotten.removeAll { $0.name == g.name }
     }
 
     /// Gatekeeper and codesign on each item's program, off the main thread (~100 ms each, so a few seconds in all).
@@ -656,6 +676,7 @@ enum Tab: String, CaseIterable, Identifiable {
         if fakeRed { s.pressure = 4 }
         let procs = sampleProcesses()
         servers = sampleServers(procs: procs)
+        forgotten = Forgotten.terminalClosed(procs, me: getuid(), kept: Set(kept))
         for i in 0..<3 {  // three readings = two history points, enough to draw the charts
             record(readCoreTicks(), s, at: .now - Double(2 - i) * 1.5)
             Thread.sleep(forTimeInterval: 0.4)

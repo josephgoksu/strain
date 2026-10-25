@@ -131,3 +131,22 @@ import Testing
     defer { try? FileManager.default.removeItem(atPath: script) }
     #expect(Signing.badge(script) == nil)  // scripts are readable: no badge
 }
+
+@Test func terminalClosedFindsDetachedToolsOnly() {
+    func p(_ pid: Int32, _ path: String, ppid: Int32 = 1, tty: String = "??", uid: UInt32 = 501, secs: Int = 9000) -> Proc {
+        Proc(pid: pid, uid: uid, cpu: 0, rssKB: 50_000, seconds: secs, path: path, ppid: ppid, tty: tty)
+    }
+    let procs = [
+        p(1, "/opt/homebrew/bin/vite"),                                  // forgotten
+        p(2, "/opt/homebrew/bin/vite", ppid: 900, tty: "ttys003"),       // still in a terminal
+        p(3, "/opt/homebrew/bin/tmux"),                                  // kept by default
+        p(4, "/Applications/Slack.app/Contents/MacOS/Slack"),            // an app
+        p(5, "/usr/libexec/trustd"),                                     // macOS
+        p(6, "/opt/homebrew/bin/node", secs: 60),                        // too young
+        p(7, "/opt/homebrew/bin/ollama"),                                // a launchd job (LaunchAgent)
+        p(8, "/opt/homebrew/bin/vite", uid: 0),                          // not mine
+    ]
+    let found = Forgotten.terminalClosed(procs, me: 501, kept: Set(Forgotten.defaultKept), jobs: { [7] })
+    #expect(found.map(\.name) == ["vite"] && found[0].pids == [1])
+    #expect(Forgotten.terminalClosed(procs, me: 501, kept: ["vite", "tmux", "ollama"], jobs: { [] }).isEmpty)
+}

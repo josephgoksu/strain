@@ -16,6 +16,7 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 - Where the space went, in Clean on a click: the ten largest folders in your home folder, and downloads untouched for 90 days with Move to Trash.
 - Old logs in Clean: log files and crash reports older than 30 days.
 - Background badges: Leftover (its app or launch file is gone), Not notarized (apps Gatekeeper rejects), Unsigned (programs with no valid signature).
+- Forgotten, at the top of Apps: command-line programs still running 2 h after their terminal closed, with Quit and Keep. Tools that detach on purpose (tmux, gpg-agent) start kept.
 - Plain English explanation for whisper-cli.
 
 ### Changed

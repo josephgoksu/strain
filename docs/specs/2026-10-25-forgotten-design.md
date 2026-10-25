@@ -1,6 +1,6 @@
 # Forgotten (design, 2026-10-25)
 
-Status: draft, waiting for approval. Once built, it folds into `strain.md` as a numbered section.
+Status: approved 2026-10-25. Slice 1 built (`strain.md` section 28). Once built, it folds into `strain.md` as a numbered section.
 
 ## Goal
 

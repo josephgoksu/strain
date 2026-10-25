@@ -351,3 +351,14 @@ Bottom of Clean, on a click only (Measure): about a minute of disk walking, and 
 | Unsigned | Background badge for bare programs (Mach-O) with no valid signature (`codesign --verify`). Gatekeeper can't assess those ("not an app"). Scripts get no badge |
 | Cost | Signatures checked off the main thread when the list loads, ~100 ms per item |
 
+## 28. Forgotten: terminal closed (2026-10-25)
+
+Design and later slices: `2026-10-25-forgotten-design.md`.
+
+| Part | What |
+|---|---|
+| Rule | Mine, parent pid 1 (launchd adopted it when its terminal closed), tty `??`, not inside an `.app`, not a macOS path, not a launchd job (`launchctl list`, run only when a candidate is left), alive ≥ `Thresholds.forgottenAfter` (2 h) |
+| Kept | `forgottenKept` in UserDefaults; starts with tmux, screen, gpg-agent, keyboxd, ssh-agent. ⋯ → Kept lists them; a click un-keeps |
+| Apps tab | Forgotten section on top while anything qualifies: name, "Terminal closed · running 3h · 120 MB", Keep, Quit (confirm, SIGTERM via `perform(.terminate)`) |
+| Sample | `ps` gains `ppid` and `tty`; the padded tty column is trimmed off the path |
+
