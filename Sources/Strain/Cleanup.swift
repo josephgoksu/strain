@@ -4,13 +4,22 @@ struct RunningApp { var name: String, bundleID: String }
 
 /// A place that only holds regenerable data: tools and apps rebuild it on demand.
 struct CleanItem: Identifiable, Equatable {
-    enum Kind: Equatable { case folder(String), appCaches }  // folder: path relative to home
+    /// folder: path relative to home. chromium: an Electron app's web caches under Application Support (an AI tool's).
+    enum Kind: Equatable { case folder(String), appCaches, chromium(app: String, bundleID: String) }
     let id: String
     let title: String
     let detail: String
     let symbol: String
     let kind: Kind
-    var folder: String? { if case .folder(let rel) = kind { rel } else { nil } }
+    var folder: String? {
+        switch kind {
+        case .folder(let rel): rel
+        case .chromium(let app, _): "Library/Application Support/" + app
+        case .appCaches: nil
+        }
+    }
+    /// The app that must not be running while its caches go.
+    var bundleID: String? { if case .chromium(_, let id) = kind { id } else { nil } }
 }
 
 /// What one clean did: bytes it freed, and entries it had to leave (in use, or protected by macOS).
@@ -55,6 +64,12 @@ enum Cleanup {
               symbol: "shippingbox", kind: .folder("Library/Caches/CocoaPods")),
         .init(id: "brew", title: "Homebrew downloads", detail: "Installer downloads Homebrew keeps after installing.",
               symbol: "mug", kind: .folder("Library/Caches/Homebrew")),
+        .init(id: "claude", title: "Claude", detail: "Claude's web caches: pages, scripts, GPU shaders. Rebuilt on launch. Your chats stay.",
+              symbol: "sparkle", kind: .chromium(app: "Claude", bundleID: "com.anthropic.claudefordesktop")),
+        .init(id: "cursor", title: "Cursor", detail: "Cursor's web caches: pages, scripts, GPU shaders. Rebuilt on launch. Settings and projects stay.",
+              symbol: "cursorarrow.rays", kind: .chromium(app: "Cursor", bundleID: "com.todesktop.230313mzl4w4u92")),
+        .init(id: "lmstudio", title: "LM Studio", detail: "LM Studio's web caches. Rebuilt on launch. Models stay.",
+              symbol: "cpu", kind: .chromium(app: "LM Studio", bundleID: "ai.elementlabs.lmstudio")),
         .init(id: "apps", title: "App caches", detail: "Caches of apps that aren't running. Apps rebuild them; first launch may be slower.",
               symbol: "app.dashed", kind: .appCaches),
     ]
@@ -62,8 +77,9 @@ enum Cleanup {
     /// Fixed folders that `items` names; app caches are direct children of ~/Library/Caches.
     static func allowed(_ dir: URL, home: String) -> Bool {
         let path = dir.standardizedFileURL.resolvingSymlinksInPath().path
-        let fixed = items.compactMap { $0.folder.map { home + "/" + $0 } }
+        let fixed = items.compactMap { item in item.bundleID == nil ? item.folder.map { home + "/" + $0 } : nil }
         if fixed.contains(path) { return true }
+        if items.contains(where: { item in chromiumFolders(item, home: home).contains { $0.resolvingSymlinksInPath().path == path } }) { return true }
         let caches = home + "/Library/Caches"
         let parent = (path as NSString).deletingLastPathComponent
         let name = (path as NSString).lastPathComponent
@@ -134,6 +150,18 @@ enum Cleanup {
         .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
+    static let chromiumCaches = ["Cache", "Code Cache", "GPUCache", "DawnWebGPUCache", "DawnGraphiteCache"]
+
+    /// The Chromium cache folders of an Electron app, at its root and in each `Partitions/*` (Claude keeps a
+    /// gigabyte there). Only these names: cookies, local storage and IndexedDB hold logins and stay.
+    static func chromiumFolders(_ item: CleanItem, home: String) -> [URL] {
+        guard item.bundleID != nil, let rel = item.folder else { return [] }
+        let fm = FileManager.default, base = URL(fileURLWithPath: home + "/" + rel)
+        let partitions = (try? fm.contentsOfDirectory(at: base.appendingPathComponent("Partitions"), includingPropertiesForKeys: nil)) ?? []
+        return ([base] + partitions).flatMap { b in chromiumCaches.map { b.appendingPathComponent($0) } }
+            .filter { fm.fileExists(atPath: $0.path) }
+    }
+
     @MainActor static func runningApps() -> [RunningApp] {
         NSWorkspace.shared.runningApplications.compactMap { app in
             guard let id = app.bundleIdentifier else { return nil }
@@ -147,6 +175,7 @@ extension Cleanup {
         switch item.kind {
         case .folder(let rel): [URL(fileURLWithPath: home + "/" + rel)]
         case .appCaches: appCacheFolders(home: home, running: running)
+        case .chromium: chromiumFolders(item, home: home)
         }
     }
 
@@ -160,7 +189,9 @@ extension Cleanup {
 
     /// Empties the item's folders. Returns how many entries were left behind.
     static func clean(_ item: CleanItem, home: String = NSHomeDirectory(), running: [RunningApp]) -> Int {
-        folders(item, home: home, running: running).reduce(0) { $0 + ((try? removeContents(of: $1, home: home)) ?? 0) }
+        let folders = folders(item, home: home, running: running)
+        if let id = item.bundleID, running.contains(where: { $0.bundleID == id }) { return folders.count }  // open app: leave it
+        return folders.reduce(0) { $0 + ((try? removeContents(of: $1, home: home)) ?? 0) }
     }
 }
 

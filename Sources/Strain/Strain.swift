@@ -70,6 +70,7 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var projects: [DevProject]?         // build folders in ~/Development and friends; nil until measured
     private(set) var simulators: [Simulator] = []
     private(set) var runtimes: [SimRuntime] = []          // simulator runtimes no simulator uses
+    private(set) var aiData: [String: (size: Int64, models: [String])] = [:]  // AIData.id → size, model names; data, never cleaned
     private(set) var archives: Int64 = 0                  // Xcode Archives: your shipped builds, data, so Reveal only
     let devRoots = DevCleanup.roots()
     private(set) var wifi: Bool?                      // nil = unknown (no Wi-Fi hardware, or not read yet)
@@ -336,6 +337,7 @@ enum Tab: String, CaseIterable, Identifiable {
         let used = simulators
         async let unused = Task.detached(priority: .utility) { DevCleanup.readUnusedRuntimes(simulators: used) }.value
         archives = await Task.detached(priority: .utility) { Cleanup.size(of: Store.archivesURL) }.value
+        aiData = await Task.detached(priority: .utility) { Store.readAIData() }.value
         runtimes = await unused
         projects = await found
         disk = Disk.read()
@@ -374,7 +376,7 @@ enum Tab: String, CaseIterable, Identifiable {
 
     /// Every Clean section's total, largest first: each cache, build folders, simulators.
     var cleanParts: [(title: String, bytes: Int64)] {
-        var parts = Cleanup.items.map { ($0.title, cleanSizes?[$0.id] ?? 0) }
+        var parts = Cleanup.items.map { ($0.bundleID == nil ? $0.title : $0.title + " caches", cleanSizes?[$0.id] ?? 0) }
         parts.append(("Project build folders", (projects ?? []).reduce(0) { $0 + $1.size }))
         parts.append(("Simulators", simulators.reduce(0) { $0 + $1.size }))
         parts.append(("Unused simulator runtimes", runtimes.reduce(0) { $0 + $1.size }))
@@ -498,6 +500,10 @@ enum Tab: String, CaseIterable, Identifiable {
             disk = Disk.read()
             cleaning.remove(id)
         }
+    }
+
+    nonisolated static func readAIData() -> [String: (size: Int64, models: [String])] {
+        Dictionary(uniqueKeysWithValues: AIData.all.map { ($0.id, (Cleanup.size(of: $0.url()), $0.modelNames())) })
     }
 
     nonisolated static let archivesURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Developer/Xcode/Archives")
@@ -630,6 +636,7 @@ enum Tab: String, CaseIterable, Identifiable {
             cleanSizes = Cleanup.sizes(running: Cleanup.runningApps())
             (projects, simulators) = (DevCleanup.scan(roots: devRoots), DevCleanup.readSimulators())
             (runtimes, archives) = (DevCleanup.readUnusedRuntimes(simulators: simulators), Cleanup.size(of: Store.archivesURL))
+            aiData = Store.readAIData()
         }
         if tab == .controls { (wifi, bluetooth, screens) = (Radios.wifiOn(), Radios.bluetoothOn(), Displays.read(Displays.list())) }
         applyAWDL()

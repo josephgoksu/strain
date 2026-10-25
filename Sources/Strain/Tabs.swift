@@ -577,7 +577,8 @@ struct CleanTab: View {
             }
             .padding(.horizontal, 10).padding(.bottom, 4)
             // Empty or missing caches (a tool you don't use) stay hidden; a row you just cleaned stays to show the result.
-            ForEach(Cleanup.items.filter(shown).sorted { (store.cleanSizes?[$0.id] ?? 0) > (store.cleanSizes?[$1.id] ?? 0) }) { CleanRow(item: $0) }
+            ForEach(Cleanup.items.filter { $0.bundleID == nil && shown($0) }.sorted { (store.cleanSizes?[$0.id] ?? 0) > (store.cleanSizes?[$1.id] ?? 0) }) { CleanRow(item: $0) }
+            AIToolsSection()
             ProjectsSection()
             SimulatorsSection()
             Text("Only things tools rebuild on their own: caches, build folders, simulator data. Apple's and running apps' caches are skipped.")
@@ -614,6 +615,48 @@ extension CleanSection where Accessory == EmptyView {
 }
 
 /// Build folders across your projects. Stale = nobody touched the project (files, installs, git) for `Thresholds.staleProjectDays`.
+/// AI tools: their web caches (Clean, while the app is closed) and their data (size and Finder only).
+struct AIToolsSection: View {
+    @Environment(Store.self) private var store
+
+    var body: some View {
+        let caches = Cleanup.items.filter { $0.bundleID != nil && ((store.cleanSizes?[$0.id] ?? 0) > 0 || store.cleaned[$0.id] != nil) }
+        let data = AIData.all.filter { (store.aiData[$0.id]?.size ?? 0) > 0 }
+        if !caches.isEmpty || !data.isEmpty {
+            let total = caches.reduce(0) { $0 + (store.cleanSizes?[$1.id] ?? 0) } + data.reduce(0) { $0 + (store.aiData[$1.id]?.size ?? 0) }
+            CleanSection(title: "AI tools", symbol: "sparkles", detail: formatBytes(total))
+            ForEach(caches) { CleanRow(item: $0) }
+            ForEach(data.sorted { (store.aiData[$0.id]?.size ?? 0) > (store.aiData[$1.id]?.size ?? 0) }) { AIDataRow(place: $0) }
+        }
+    }
+}
+
+/// A tool's data: models or transcripts. Strain never deletes it; Finder (or the tool) does, one choice at a time.
+struct AIDataRow: View {
+    @Environment(Store.self) private var store
+    let place: AIData
+
+    var body: some View {
+        let entry = store.aiData[place.id], models = entry?.models ?? []
+        HStack(spacing: 10) {
+            SymbolTile(symbol: place.symbol, tint: .purple).frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(place.title).font(.body.weight(.semibold)).lineLimit(1)
+                    Pill(text: "Your data", color: .secondary)
+                }
+                Text(models.isEmpty ? place.detail : models.joined(separator: ", "))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                    .help(place.detail + (models.isEmpty ? "" : "\n" + models.joined(separator: "\n")))
+            }
+            Spacer(minLength: 6)
+            Text(formatBytes(entry?.size ?? 0)).font(.system(.callout, design: .rounded).weight(.semibold)).monospacedDigit()
+            IconButton(symbol: "folder", help: "Show in Finder") { reveal(place.url().path) }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+    }
+}
+
 struct ProjectsSection: View {
     @Environment(Store.self) private var store
 
@@ -1234,6 +1277,8 @@ struct CleanRow: View {
                 HStack(spacing: 2) {
                     if busy {
                         Label("Deleting… big caches take a minute", systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
+                    } else if let id = item.bundleID, NSRunningApplication.runningApplications(withBundleIdentifier: id).count > 0 {
+                        Label("Quit \(item.title) to clean", systemImage: "lock.fill").font(.caption).foregroundStyle(.secondary)
                     } else if (size ?? 0) > 0 {
                         ConfirmButton(title: "Clean", confirm: "Delete \(formatBytes(size ?? 0))?", symbol: "sparkles") {
                             withAnimation(.snappy) { store.clean(item) }

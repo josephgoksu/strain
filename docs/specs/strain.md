@@ -323,3 +323,12 @@ Design and the slices still to build: `2026-10-25-weekly-check-design.md`.
 | Xcode Archives | Size and Show in Finder only: shipped builds are data. Not counted in the total |
 | iOS Device Logs | A Clean row (`~/Library/Developer/Xcode/iOS Device Logs`) |
 
+## 25. AI tools (2026-10-25)
+
+One section in Clean. Caches and data split per tool.
+
+| Kind | Tools | Strain does |
+|---|---|---|
+| Cache | Claude, Cursor, LM Studio: Chromium `Cache`, `Code Cache`, `GPUCache`, `Dawn*Cache` at the app's Application Support root and in each `Partitions/*` | Clean, refused while the app runs ("Quit Claude to clean"). Cookies, Local Storage, IndexedDB, the app folder itself: never on the allowlist. Counted in the total |
+| Data | Claude sandbox VM (`vm_bundles`), Claude Code and Codex transcripts, Codex runtime, Ollama, Hugging Face and LM Studio models | Size, model names, Show in Finder. Never deleted by Strain; not in the total |
+
