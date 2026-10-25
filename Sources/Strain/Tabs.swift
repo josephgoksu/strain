@@ -553,10 +553,27 @@ struct CleanTab: View {
     var body: some View {
         let d = store.disk
         LazyVStack(alignment: .leading, spacing: 2) {
-            CleanSection(title: "Free up space", symbol: "internaldrive")
+            CleanSection(title: "Free up space", symbol: "internaldrive") {
+                if store.scanning {
+                    ProgressView().controlSize(.mini)
+                } else if store.cleanSizes != nil {
+                    Button { Task { await store.checkNow() } } label: { Label("Check now", systemImage: "arrow.clockwise") }
+                        .buttonStyle(HoverButtonStyle()).font(.caption)
+                        .help("Measure every section again. Strain also checks once a week on its own and tells you; it never deletes without your click.")
+                }
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Bar(fraction: d.total > 0 ? 1 - Double(d.free) / Double(d.total) : 0, tint: d.free < d.total / 10 ? .red : .accentColor)
                 Text(d.summary).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+                if store.cleanSizes != nil {
+                    // The total already heads the tab: name the largest parts and when they were measured.
+                    Text(([store.cleanParts.isEmpty ? nil : "Largest: " + Store.checkLine(store.cleanParts),
+                           store.lastCheck.map { "checked \($0.formatted(.relative(presentation: .named)))" }].compactMap { $0 })
+                        .joined(separator: " · "))
+                        .font(.caption.monospacedDigit()).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Measuring…").font(.caption).foregroundStyle(.secondary)
+                }
             }
             .padding(.horizontal, 10).padding(.bottom, 4)
             // Empty or missing caches (a tool you don't use) stay hidden; a row you just cleaned stays to show the result.
@@ -566,7 +583,7 @@ struct CleanTab: View {
             Text("Only things tools rebuild on their own: caches, build folders, simulator data. Apple's and running apps' caches are skipped.")
                 .font(.caption).foregroundStyle(.secondary).padding(10)
         }
-        .task { if store.cleanSizes == nil { await store.scanClean() } }
+        .task { if store.cleanSizes == nil { await store.checkNow() } }
     }
 
     private func shown(_ item: CleanItem) -> Bool {

@@ -100,6 +100,12 @@ enum Tab: String, CaseIterable, Identifiable {
     @ObservationIgnored private var locked = false
     @ObservationIgnored private var onBattery = Awake.onBattery
     @ObservationIgnored private var awakeTimer: Task<Void, Never>?
+    /// When Clean was last measured in full, by Check now or the weekly check.
+    private(set) var lastCheck = UserDefaults.standard.object(forKey: "lastCheck") as? Date {
+        didSet { UserDefaults.standard.set(lastCheck, forKey: "lastCheck") }
+    }
+    /// ponytail: `--fake-week` runs the weekly check at the first tick and always notifies, to test it without waiting.
+    @ObservationIgnored private var fakeWeek = CommandLine.arguments.contains("--fake-week")
     @ObservationIgnored private var refreshingScreens = false
     @ObservationIgnored private var screensStale = false    // a screen change arrived during a read
     @ObservationIgnored private var touched: Set<String> = []  // "display.vcp" set while a screen read is in flight
@@ -124,7 +130,7 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var helper = HelperClient.status  // Strain's root helper: .enabled once approved in System Settings
     private(set) var helperError: String?           // why the last "Turn on helper" failed
     private(set) var awdlConflict = false            // AWDL Control is running and forcing the link on its own
-    private var scanning = false
+    private(set) var scanning = false
     private(set) var disk = Disk.read()
     private(set) var logged = Explanations.readUnknowns()  // unknown.txt, re-read only when Strain writes it
     private(set) var unknowns: [(name: String, path: String)] = []
@@ -247,6 +253,7 @@ enum Tab: String, CaseIterable, Identifiable {
         let battery = Awake.onBattery
         if battery, !onBattery, awakeStopOnBattery { awakeUntil = nil }  // only on the switch, like unplugging
         onBattery = battery
+        if weeklyCheckDue(at: now) { Task { await weeklyCheck() } }
         if tab == .controls { await refreshRadios() }  // the AirDrop status depends on both radios
         if displayKeys { DisplayKeys.start(prompt: false) }  // picks up an Accessibility grant, or drops a revoked one
         keysBlocked = displayKeys && !DisplayKeys.running
@@ -327,6 +334,49 @@ enum Tab: String, CaseIterable, Identifiable {
         projects = await found
         disk = Disk.read()
         scanning = false
+    }
+
+    /// Check now: measures every Clean section and stamps the time.
+    func checkNow() async {
+        guard !scanning else { return }
+        await scanClean()
+        lastCheck = .now
+    }
+
+    /// Once a week, on AC power, while the Mac is calm, never in a snapshot: the scan walks disks, so it must not
+    /// become the strain Strain reports.
+    private func weeklyCheckDue(at now: Date) -> Bool {
+        if fakeWeek { return true }
+        guard isApp, !CommandLine.arguments.contains("--snapshot"), !scanning, !onBattery, monitor.level == .green else { return false }
+        return now.timeIntervalSince(lastCheck ?? .distantPast) >= Thresholds.checkDays * 86400
+    }
+
+    /// Measures, then sends one notification if enough can go. Deletes nothing: cleaning stays a click in Clean.
+    private func weeklyCheck() async {
+        let forced = fakeWeek
+        fakeWeek = false
+        await checkNow()
+        guard forced || Double(cleanable) >= Thresholds.checkMinGB * 1e9,
+              UserDefaults.standard.string(forKey: "notify") != "off" else { return }
+        let title = "Strain: \(formatBytes(cleanable)) to clean"
+        let body = Store.checkLine(cleanParts) + ". Open Strain's Clean tab to choose what goes."
+        guard isApp else { return print("\(title)\n\(body)") }
+        let content = UNMutableNotificationContent()
+        (content.title, content.body) = (title, body)
+        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "weekly-check", content: content, trigger: nil))
+    }
+
+    /// Every Clean section's total, largest first: each cache, build folders, simulators.
+    var cleanParts: [(title: String, bytes: Int64)] {
+        var parts = Cleanup.items.map { ($0.title, cleanSizes?[$0.id] ?? 0) }
+        parts.append(("Project build folders", (projects ?? []).reduce(0) { $0 + $1.size }))
+        parts.append(("Simulators", simulators.reduce(0) { $0 + $1.size }))
+        return parts.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.map { (title: $0.0, bytes: $0.1) }
+    }
+
+    /// "Simulators 4.3 GB, iOS DeviceSupport 5.6 GB, Go build cache 1 GB": the three largest parts.
+    static func checkLine(_ parts: [(title: String, bytes: Int64)]) -> String {
+        parts.prefix(3).map { "\($0.title) \(formatBytes($0.bytes))" }.joined(separator: ", ")
     }
 
     /// Reads both radios. Bluetooth's first read asks the user for Bluetooth access once (Info.plist explains why).

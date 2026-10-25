@@ -12,6 +12,8 @@ enum Thresholds {
     static let cooldown = 1800.0         // no repeat notification for the same culprit
     static let interval = 10.0           // seconds between samples
     static let diskAmberGB = 10.0, diskRedGB = 3.0  // free space: below this macOS can't grow swap or caches
+    static let checkDays = 7.0           // the background check runs at most this often…
+    static let checkMinGB = 5.0          // …and only notifies when at least this much can go
     static let staleProjectDays = 30.0   // a project nobody touched for this long: its build folders count as stale
 }
 

@@ -9,6 +9,8 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 - Displays in Controls: brightness for every screen, plus volume for monitors with speakers (DDC/CI on Apple silicon).
 - Optional brightness and volume keys for external monitors, following the pointer; F14/F15 work as brightness keys. Needs Accessibility.
 - Keep awake in Controls and the ⋯ menu: indefinitely or 10 min to 12 h, optionally letting the display sleep, sleeping while locked, or stopping on battery. A cup shows in the menu bar while on.
+- Check now in Clean: measures again, then names the three largest parts and when it was checked.
+- A weekly check: on AC power, while the Mac is calm, Strain measures Clean and notifies once when 5 GB or more can go. It deletes nothing.
 - Plain English explanation for whisper-cli.
 
 ### Changed

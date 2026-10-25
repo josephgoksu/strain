@@ -303,3 +303,15 @@ Top of Controls, plus **Keep This Mac Awake** in the ⋯ menu. One IOKit power a
 | End | A continuous-clock timer, so time asleep counts. The end date is saved: a relaunch resumes, an expired one clears |
 | Menu bar | A cup beside the gauge while on |
 | Not built | Custom duration or end time, a global shortcut, keeping a closed laptop awake |
+
+## 23. Check now and the weekly check (2026-10-25)
+
+Design and the slices still to build: `2026-10-25-weekly-check-design.md`.
+
+| Part | What |
+|---|---|
+| Check now | Clean's header: measures every section, then names the three largest parts and when it was checked (the total already heads the tab). Opening Clean the first time counts as a check |
+| Weekly | At most once in `Thresholds.checkDays` (7) since any check, only on AC power, only while the level is green, never in a snapshot. Notifies once when `Thresholds.checkMinGB` (5 GB) or more can go; follows the Notifications setting |
+| Never | Deletes. Cleaning stays a click and a confirm in Clean |
+| Test | `--fake-week` runs it at the first tick and always notifies (prints under `swift run`) |
+
