@@ -28,7 +28,7 @@ A menu bar app that names the app behind the slowdown, frees the space your tool
 | **Apps** | Processes grouped by app, ranked by what's straining the Mac (memory or CPU), each explained | Quit or shut down, after a confirm |
 | **Servers** | Every TCP listener: project, ports, local or open to your network | Open `localhost:<port>`, stop it |
 | **Background** | Login items and launch agents, which run, which run as root | Jump to System Settings |
-| **Controls** | Wi-Fi, Bluetooth, AirDrop vs low ping, brightness and speaker volume per display, one-click macOS fixes | Restart Dock, flush DNS, restart audio, drive an external monitor's brightness and volume from your keyboard |
+| **Controls** | Keep the Mac awake, Wi-Fi, Bluetooth, AirDrop vs low ping, brightness and speaker volume per display, one-click macOS fixes | Keep a long build running, restart Dock, flush DNS, drive an external monitor's brightness and volume from your keyboard |
 | **Clean** | Space tools rebuild on their own: dev caches, stale `node_modules`/`target`, simulator data | Delete with a confirm |
 | **Unknown** | Processes Strain can't explain yet | Ask AI to write the explanations |
 

@@ -84,6 +84,22 @@ enum Tab: String, CaseIterable, Identifiable {
         }
     }
     private(set) var keysBlocked = false              // keys on, but Accessibility not granted yet
+    /// Keep awake: nil = off, .distantFuture = indefinitely. Saved, so a relaunch (an update, say) carries on.
+    private(set) var awakeUntil: Date? = UserDefaults.standard.object(forKey: "awakeUntil") as? Date {
+        didSet { UserDefaults.standard.set(awakeUntil, forKey: "awakeUntil"); applyAwake() }
+    }
+    var awakeLetDisplaySleep = UserDefaults.standard.bool(forKey: "awakeLetDisplaySleep") {
+        didSet { UserDefaults.standard.set(awakeLetDisplaySleep, forKey: "awakeLetDisplaySleep"); applyAwake() }
+    }
+    var awakeLetLockedSleep = UserDefaults.standard.bool(forKey: "awakeLetLockedSleep") {
+        didSet { UserDefaults.standard.set(awakeLetLockedSleep, forKey: "awakeLetLockedSleep"); applyAwake() }
+    }
+    var awakeStopOnBattery = UserDefaults.standard.bool(forKey: "awakeStopOnBattery") {
+        didSet { UserDefaults.standard.set(awakeStopOnBattery, forKey: "awakeStopOnBattery") }
+    }
+    @ObservationIgnored private var locked = false
+    @ObservationIgnored private var onBattery = Awake.onBattery
+    @ObservationIgnored private var awakeTimer: Task<Void, Never>?
     @ObservationIgnored private var refreshingScreens = false
     @ObservationIgnored private var screensStale = false    // a screen change arrived during a read
     @ObservationIgnored private var touched: Set<String> = []  // "display.vcp" set while a screen read is in flight
@@ -142,6 +158,12 @@ enum Tab: String, CaseIterable, Identifiable {
         NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { if let self, self.displayKeys { Task { await self.refreshScreens() } } }  // Controls re-reads on open
         }
+        for (name, isLocked) in [("com.apple.screenIsLocked", true), ("com.apple.screenIsUnlocked", false)] {
+            DistributedNotificationCenter.default().addObserver(forName: .init(name), object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.locked = isLocked; self?.applyAwake() }
+            }
+        }
+        applyAwake()  // resumes a saved session, or clears an expired one
         Task { [weak self] in
             while let self {
                 await self.tick()
@@ -182,6 +204,24 @@ enum Tab: String, CaseIterable, Identifiable {
                         path: app.bundleURL?.path)
     }
 
+    /// Starts keeping the Mac awake for `minutes` (nil = indefinitely), replacing any running session.
+    func keepAwake(minutes: Int?) { awakeUntil = minutes.map { .now + Double($0) * 60 } ?? .distantFuture }
+    func stopAwake() { awakeUntil = nil }
+
+    /// Holds or releases the assertion for the current state and schedules the end. Snapshots and dev runs never hold.
+    private func applyAwake() {
+        guard isApp, !CommandLine.arguments.contains("--snapshot") else { return }
+        if let until = awakeUntil, until <= .now { return awakeUntil = nil }  // re-enters with nil
+        Awake.hold(Awake.type(on: awakeUntil != nil, locked: locked, letDisplaySleep: awakeLetDisplaySleep, letLockedSleep: awakeLetLockedSleep))
+        awakeTimer?.cancel()
+        guard let until = awakeUntil, until != .distantFuture else { return }
+        awakeTimer = Task { [weak self] in
+            // The continuous clock counts time asleep (lid closed), so a session that ran out meanwhile ends on wake.
+            try? await Task.sleep(for: .seconds(until.timeIntervalSinceNow))
+            if !Task.isCancelled, let self, self.awakeUntil == until { self.awakeUntil = nil }
+        }
+    }
+
     /// Turns Strain's root helper on (macOS then wants an OK in System Settings) or off.
     func setHelper(_ on: Bool) {
         guard switching.insert("helper").inserted else { return }
@@ -203,6 +243,10 @@ enum Tab: String, CaseIterable, Identifiable {
         servers = srv
         let now = Date.now
         if let until = awdlPausedUntil, until <= now { awdlPausedUntil = nil }
+        // ponytail: battery is polled each tick (10 s); an IOPS run-loop source if that lag ever matters
+        let battery = Awake.onBattery
+        if battery, !onBattery, awakeStopOnBattery { awakeUntil = nil }  // only on the switch, like unplugging
+        onBattery = battery
         if tab == .controls { await refreshRadios() }  // the AirDrop status depends on both radios
         if displayKeys { DisplayKeys.start(prompt: false) }  // picks up an Accessibility grant, or drops a revoked one
         keysBlocked = displayKeys && !DisplayKeys.running
@@ -475,6 +519,7 @@ enum Tab: String, CaseIterable, Identifiable {
             String(format: "Swap: %@ GB used, swapping %.0f MB/min", gb(s.swapUsedMB), monitor.swapRate),
             String(format: "CPU: load %.1f on %d cores", s.load, s.cores),
             "Disk: \(Disk.read().summary)",  // fresh: `disk` only updates with the Clean tab
+            "Keep awake: \(awakeUntil.map { $0 == .distantFuture ? "on, indefinitely" : "on until \($0.formatted(date: .omitted, time: .shortened))" } ?? "off")",
             "", "Top by memory:",
         ]
         lines += groups.sorted { $0.rssKB > $1.rssKB }.prefix(10).map(row)
@@ -574,7 +619,7 @@ struct Strain: App {
         MenuBarExtra {
             Panel().environment(store)
         } label: {
-            Image(nsImage: menuBarIcon(store.monitor.level))
+            Image(nsImage: menuBarIcon(store.monitor.level, awake: store.awakeUntil != nil))
             if menuBarText, store.monitor.level > .green, let top = store.culprits.first {
                 Text(store.title(top))
             }
@@ -590,11 +635,26 @@ extension Level {
     var title: String { ["All good", "Under strain", "Struggling"][rawValue] }
 }
 
-/// A tinted gauge. Non-template, so the colour survives the menu bar's own tinting.
-@MainActor func menuBarIcon(_ level: Level) -> NSImage {
+/// A tinted gauge, plus a cup while keeping the Mac awake. Non-template when amber or red, so the colour survives the
+/// menu bar's own tinting.
+@MainActor func menuBarIcon(_ level: Level, awake: Bool = false) -> NSImage {
     let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-        .applying(.init(paletteColors: [level == .green ? .labelColor : level.nsColor]))
-    let image = NSImage(systemSymbolName: level.symbol, accessibilityDescription: level.title)!.withSymbolConfiguration(config)!
-    image.isTemplate = level == .green  // green follows the menu bar; amber and red stand out
+    let tint = level == .green ? NSColor.labelColor : level.nsColor
+    let gauge = NSImage(systemSymbolName: level.symbol, accessibilityDescription: level.title)!
+        .withSymbolConfiguration(config.applying(.init(paletteColors: [tint])))!
+    guard awake else {
+        gauge.isTemplate = level == .green  // green follows the menu bar; amber and red stand out
+        return gauge
+    }
+    let cup = NSImage(systemSymbolName: "cup.and.saucer.fill", accessibilityDescription: "Keeping awake")!
+        .withSymbolConfiguration(config.applying(.init(paletteColors: [.labelColor])))!
+    let gap = 4.0, size = NSSize(width: gauge.size.width + gap + cup.size.width, height: max(gauge.size.height, cup.size.height))
+    let image = NSImage(size: size, flipped: false) { _ in
+        gauge.draw(at: NSPoint(x: 0, y: (size.height - gauge.size.height) / 2), from: .zero, operation: .sourceOver, fraction: 1)
+        cup.draw(at: NSPoint(x: gauge.size.width + gap, y: (size.height - cup.size.height) / 2), from: .zero, operation: .sourceOver, fraction: 1)
+        return true
+    }
+    image.isTemplate = level == .green
+    image.accessibilityDescription = "\(level.title), keeping awake"
     return image
 }

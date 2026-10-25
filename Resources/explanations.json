@@ -20,6 +20,7 @@
   "Antigravity": {"what": "The Antigravity editor and its language servers.", "advice": "Quit it when not in use."},
   "llama-server": {"title": "Local LLM (llama.cpp)", "what": "A local LLM server (llama.cpp), such as a local chat or embedding model. Holds the whole model in memory.", "advice": "Quit it when you aren't using the model. Running two at once can exhaust RAM."},
   "whisper-cli": {"title": "Whisper transcription", "what": "Turns audio into text on this Mac (whisper.cpp). Heavy on CPU and GPU while it runs.", "advice": "Ends when the file is transcribed. Quit it from its terminal if you started it by mistake."},
+  "chrome-headless-shell": {"title": "Headless Chrome (Playwright)", "what": "A Chrome with no window that Playwright or another test tool drives for browser tests and scraping.", "advice": "Ends when its test or script finishes. A leftover one after a crashed run is safe to quit."},
   "whisper-server": {"title": "Whisper speech-to-text", "what": "A local speech-to-text server (whisper.cpp), such as a local transcriber.", "advice": "Quit it when you aren't transcribing."},
   "diskimages-helper": {"title": "Disk images", "what": "macOS mounting or reading a disk image (.dmg) or simulator volume.", "advice": "Busy while a disk image is open or being verified. Eject images you're done with."},
   "WindowServer": {"title": "Window Server", "what": "macOS's screen compositor. Draws every window.", "advice": "High when many windows, displays or animations are active. Can't be quit."},

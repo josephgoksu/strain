@@ -123,6 +123,14 @@ struct MoreMenu: View {
     var body: some View {
         @Bindable var store = store
         Menu {
+            Menu(store.awakeUntil == nil ? "Keep This Mac Awake" : "Keeping This Mac Awake") {
+                ForEach(Awake.durations, id: \.title) { d in Button(d.title) { store.keepAwake(minutes: d.minutes) } }
+                if store.awakeUntil != nil {
+                    Divider()
+                    Button("Stop") { store.stopAwake() }
+                }
+            }
+            Divider()
             Toggle("Launch at Login", isOn: $store.launchAtLogin)
             Toggle("Show Culprit in Menu Bar", isOn: $menuBarText)
             Picker("Notifications", selection: $notify) {

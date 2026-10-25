@@ -503,6 +503,8 @@ struct ControlsTab: View {
 
     var body: some View {
         LazyVStack(alignment: .leading, spacing: 2) {
+            CleanSection(title: "Keep awake", symbol: "cup.and.saucer")
+            AwakeCard().padding(.horizontal, 10).padding(.bottom, 6)
             CleanSection(title: "Connections", symbol: "wifi")
             HStack(spacing: 6) {
                 if store.wifi != nil { RadioTile(id: "wifi", title: "Wi-Fi", on: "wifi", off: "wifi.slash", state: store.wifi) }
@@ -905,6 +907,68 @@ struct RadioTile: View {
         .animation(.snappy, value: armedAt)
         .help(isOn ? "Turn \(title) off" + (id == "bluetooth" ? ". Bluetooth keyboards, mice and AirPods disconnect." : ".") : "Turn \(title) on")
         .accessibilityLabel(title).accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)
+    }
+}
+
+/// Keeps the Mac awake for a while or until stopped: the switch, how long is left, and when to let it sleep anyway.
+struct AwakeCard: View {
+    @Environment(Store.self) private var store
+    @State private var hover = false
+
+    var body: some View {
+        @Bindable var store = store
+        let until = store.awakeUntil
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Button { withAnimation(.snappy) { until == nil ? store.keepAwake(minutes: nil) : store.stopAwake() } } label: {
+                    ZStack {
+                        Circle().fill(until != nil ? Color.accentColor : Color.primary.opacity(hover ? 0.18 : 0.12))
+                        Image(systemName: until != nil ? "cup.and.saucer.fill" : "cup.and.saucer")
+                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(until != nil ? .white : .secondary)
+                            .contentTransition(.symbolEffect(.replace))
+                    }
+                    .frame(width: 30, height: 30)
+                }
+                .buttonStyle(PressScale())
+                .onHover { h in withAnimation(.easeOut(duration: 0.12)) { hover = h } }
+                .help(until == nil ? "Keep this Mac awake until you stop it" : "Let this Mac sleep again")
+                .accessibilityLabel("Keep awake").accessibilityValue(until != nil ? "On" : "Off").accessibilityAddTraits(.isToggle)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Keep this Mac awake").font(.callout.weight(.semibold))
+                    SwiftUI.Group {
+                        if let until, until != .distantFuture {
+                            Text("Until \(until.formatted(date: .omitted, time: .shortened)) · ") + Text(timerInterval: Date.now...until, countsDown: true) + Text(" left")
+                        } else {
+                            Text(until == nil ? "Off: the Mac sleeps as usual" : "On until you stop it")
+                        }
+                    }
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary).lineLimit(1).contentTransition(.opacity)
+                }
+                Spacer(minLength: 4)
+                Menu {
+                    ForEach(Awake.durations, id: \.title) { d in Button(d.title) { withAnimation(.snappy) { store.keepAwake(minutes: d.minutes) } } }
+                    if until != nil {
+                        Divider()
+                        Button("Stop") { withAnimation(.snappy) { store.stopAwake() } }
+                    }
+                } label: {
+                    Text(until == nil ? "Start" : "Change")
+                }
+                .menuStyle(.borderlessButton).fixedSize().font(.caption)
+                .help("Keep awake for a set time")
+            }
+            VStack(alignment: .leading, spacing: 3) {
+                Toggle("Let the display sleep", isOn: $store.awakeLetDisplaySleep)
+                    .help("The Mac keeps running (downloads, builds, servers) while the screen turns off as usual.")
+                Toggle("Let it sleep while the screen is locked", isOn: $store.awakeLetLockedSleep)
+                    .help("Locking the screen pauses keep awake; unlocking resumes it.")
+                Toggle("Stop when switching to battery", isOn: $store.awakeStopOnBattery)
+                    .help("Unplugging the charger ends keep awake, to save the battery.")
+            }
+            .toggleStyle(.checkbox).controlSize(.small).font(.caption).foregroundStyle(.secondary)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.primary.opacity(0.04)))
     }
 }
 

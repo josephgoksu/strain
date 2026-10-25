@@ -37,8 +37,6 @@ struct QuickAction: Identifiable {
               symbol: "speaker.wave.2", command: HelperKit.shell("audio"), admin: true),
         .init(id: "bluetooth", title: "Restart Bluetooth", detail: "Fixes AirPods, keyboards or mice that won't connect: restarts the Bluetooth daemon.",
               symbol: "dot.radiowaves.left.and.right", command: HelperKit.shell("bluetooth"), admin: true, group: .network),
-        .init(id: "awake", title: "Stay awake 1 h", detail: "Keeps the Mac and display awake for an hour: long builds, downloads, talks. Ends on its own.",
-              symbol: "cup.and.saucer", command: "caffeinate -dims -t 3600 >/dev/null 2>&1 &", group: .utilities),
         .init(id: "trash", title: "Empty Trash", detail: "Empties the Trash through Finder. Permanent.",
               symbol: "trash", command: "osascript -e 'tell application \"Finder\" to empty trash'", group: .utilities),
     ]

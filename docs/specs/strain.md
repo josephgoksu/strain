@@ -231,7 +231,7 @@ Top-3 rows open that app in the Apps tab. History lives in memory only (60 point
 | Project build folders | Walks ~/Development (and Developer, Projects, code, src, dev, repos, work, GitHub) for node_modules, .next, .turbo, .nuxt, .svelte-kit, .parcel-cache (beside package.json), target (beside Cargo.toml), .build (beside Package.swift). Grouped by project, sized, "touched" = newest of the folder, everything directly in it (manifests, lockfiles, the build folders, so installs and builds count) and its git index. "Clean N stale" deletes build folders of projects untouched `Thresholds.staleProjectDays` (30) days; a project with a listening server is never touched, checked again at delete time |
 | Simulators | `simctl list -j` sizes (dataPathSize). Erase = `simctl erase` (shut down only); "Delete N unavailable" when any |
 | More caches | Go modules (read-only folders made writable first), Cargo registry, pnpm, Yarn, uv, Gradle, CocoaPods. Empty or missing caches are hidden |
-| Quick actions | Restart audio (admin), Restart Bluetooth (admin), Stay awake 1 h (caffeinate) |
+| Quick actions | Restart audio (admin), Restart Bluetooth (admin). Stay awake moved to Keep awake (section 22) |
 | Strain | Disk under 10 GB free = amber, under 3 GB = red (swap needs room). Header shows "easing off" while a lower level waits out its hold |
 
 ## 16. Radio switches (2026-10-23)
@@ -252,7 +252,7 @@ Holding needs root, so Strain's helper does it (section 19): Strain tells it hol
 
 ## 18. Controls tab (2026-10-23)
 
-Switches and fixes moved out of Clean into their own tab: Connections (Wi-Fi, Bluetooth, AirDrop link), Fix something (Dock, Finder, menu bar, Open With, Quick Look, audio), Network (Flush DNS, Restart Bluetooth), Utilities (Free memory, Stop simulators, Stay awake, Empty Trash). Clean only frees space.
+Switches and fixes moved out of Clean into their own tab: Connections (Wi-Fi, Bluetooth, AirDrop link), Fix something (Dock, Finder, menu bar, Open With, Quick Look, audio), Network (Flush DNS, Restart Bluetooth), Utilities (Free memory, Stop simulators, Empty Trash). Clean only frees space.
 
 ## 19. Strain's helper (2026-10-23)
 
@@ -289,3 +289,17 @@ Card per screen in Controls under Connections; read fresh each time Controls ope
 | Volume, mute | the DDC monitor under the pointer (or the only one) when the audio output has no volume of its own (HDMI/DP audio); else macOS |
 
 Keys are opt-in ("Brightness and volume keys control these"): an active event tap on media keys needs Accessibility, and the card says so until it's granted. 1/16 steps, ⇧⌥ for 1/64. Warns when MonitorControl is running, since both answer the keys. Pairing: the framebuffer before each `DCPAVServiceProxy` in the registry carries the EDID vendor/product/serial, matched to `CGDisplay{Vendor,Model,Serial}Number`. Mute isn't read (monitors misreport it). Not built yet: contrast, software dimming below 0, built-in→external brightness sync, an on-screen OSD, Intel (`IOFBCopyI2CInterfaceForBus`) DDC.
+
+## 22. Keep awake (2026-10-25)
+
+Top of Controls, plus **Keep This Mac Awake** in the ⋯ menu. One IOKit power assertion ("Strain: keep awake", visible in `pmset -g assertions`); macOS drops it when Strain quits or crashes.
+
+| Part | What |
+|---|---|
+| Durations | Indefinitely, 10 min, 30 min, 1, 2, 4, 8, 12 h. Picking one replaces the running session; the cup button toggles indefinitely |
+| Assertion | `PreventUserIdleDisplaySleep`; with **Let the display sleep**, `PreventUserIdleSystemSleep` |
+| Locked | **Let it sleep while the screen is locked**: released on `com.apple.screenIsLocked`, held again on unlock |
+| Battery | **Stop when switching to battery**: ends the session on the AC → battery switch (polled each tick, 10 s) |
+| End | A continuous-clock timer, so time asleep counts. The end date is saved: a relaunch resumes, an expired one clears |
+| Menu bar | A cup beside the gauge while on |
+| Not built | Custom duration or end time, a global shortcut, keeping a closed laptop awake |
