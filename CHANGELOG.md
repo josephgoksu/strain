@@ -4,6 +4,12 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-25
+
+### Added
+
+- Plain English explanations for deadcode, gpg-agent, the Go linker, golangci-lint, local API servers, grype and osv-scanner.
+
 ## [0.1.0] - 2026-10-23
 
 ### Added

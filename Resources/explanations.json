@@ -165,5 +165,12 @@
   "Telegram": {"what": "Telegram messenger.", "advice": "Quit it when not chatting."},
   "Obsidian": {"what": "Obsidian notes app and its plugins.", "advice": "Heavy plugins and big vaults add memory. Disable plugins you don't use."},
   "1Password": {"what": "1Password and its browser helper.", "advice": "Normally light. Keep it running for autofill."},
-  "ps": {"title": "Process list (ps)", "what": "Lists running processes. Strain runs it every 10 seconds to take its sample.", "advice": "Ends in milliseconds. If you see it often, it's Strain (or another monitor) sampling."}
+  "ps": {"title": "Process list (ps)", "what": "Lists running processes. Strain runs it every 10 seconds to take its sample.", "advice": "Ends in milliseconds. If you see it often, it's Strain (or another monitor) sampling."},
+  "deadcode": {"title": "Go dead code finder", "what": "The deadcode tool, scanning a Go module for functions nothing calls.", "advice": "Ends when the scan ends. Big repos take a while; stop it in the terminal or agent that started it."},
+  "gpg-agent": {"title": "GPG agent", "what": "Holds your unlocked GPG keys so git commits and other signing don't ask for the passphrase every time.", "advice": "Normally idle. If it spins, run gpgconf --kill gpg-agent; it restarts on the next signature."},
+  "link": {"title": "Go linker", "what": "The Go linker, joining compiled packages into one binary during a build or test.", "advice": "Ends when the build ends. Heavy on memory for big binaries."},
+  "golangci-lint": {"title": "Go linter", "what": "golangci-lint, running dozens of Go linters over a repo, often from a git hook or editor.", "advice": "Ends when the lint run ends. Heavy on big repos; its cache makes later runs faster."},
+  "api": {"title": "Local API server", "what": "A dev API server built from your code, usually a Go app rebuilt and restarted by a hot reload tool like air.", "advice": "Runs until you stop its dev stack. Stop it in the terminal, tmux or launch config that started it."},
+  "grype": {"title": "Grype scanner", "what": "Grype, scanning a project or image for packages with known vulnerabilities.", "advice": "Ends when the scan ends. The first run downloads its vulnerability database, which is slow."},
+  "osv-scanner": {"title": "OSV scanner", "what": "osv-scanner, checking a project's dependencies against Google's open source vulnerability database.", "advice": "Ends when the scan ends. Stop it in the terminal or hook that started it if it hangs."}
 }
