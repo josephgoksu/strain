@@ -192,7 +192,7 @@ struct HistoryChart: View {
                 }
             }
             if points.count < 2 {
-                Text("Collecting… a point every \(Int(Thresholds.interval)) s").font(.caption).foregroundStyle(.tertiary)
+                Text("Collecting… a point every \(Int(Thresholds.interval)) s").font(.caption).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: 64)
                     .background(RoundedRectangle(cornerRadius: 8).fill(.quaternary.opacity(0.4)))
             } else {

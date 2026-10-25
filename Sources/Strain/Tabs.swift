@@ -309,7 +309,7 @@ struct BackgroundTab: View {
                         }
                     }
                     Text("Read \(store.backgroundRead.map { $0.formatted(.relative(presentation: .named)) } ?? "just now"). Strain never switches these off; use the gear to open Login Items in System Settings.")
-                        .font(.caption).foregroundStyle(.tertiary).padding(10)
+                        .font(.caption).foregroundStyle(.secondary).padding(10)
                 }
             } else {
                 ReadLoginItems()
@@ -385,7 +385,7 @@ struct BackgroundRow: View {
                         }
                     }
                 } else {
-                    Text(item.status == .on ? "Idle" : "").font(.caption).foregroundStyle(.tertiary)
+                    Text(item.status == .on ? "Idle" : "").font(.caption).foregroundStyle(.secondary)
                 }
             }
         } details: {
@@ -551,7 +551,7 @@ struct CleanTab: View {
             ProjectsSection()
             SimulatorsSection()
             Text("Only things tools rebuild on their own: caches, build folders, simulator data. Apple's and running apps' caches are skipped.")
-                .font(.caption).foregroundStyle(.tertiary).padding(10)
+                .font(.caption).foregroundStyle(.secondary).padding(10)
         }
         .task { if store.cleanSizes == nil { await store.scanClean() } }
     }
@@ -571,7 +571,7 @@ struct CleanSection<Accessory: View>: View {
     var body: some View {
         HStack(spacing: 6) {
             Label(title.uppercased(), systemImage: symbol).font(.caption2.weight(.semibold)).foregroundStyle(.secondary)
-            if let detail { Text(detail).font(.caption2.monospacedDigit()).foregroundStyle(.tertiary) }
+            if let detail { Text(detail).font(.caption2.monospacedDigit()).foregroundStyle(.secondary) }
             Spacer()
             accessory
         }
@@ -611,7 +611,7 @@ struct ProjectsSection: View {
             }
             ForEach(projects.prefix(30)) { ProjectRow(project: $0) }
             if projects.count > 30 {
-                Text("\(projects.count - 30) smaller projects not shown.").font(.caption).foregroundStyle(.tertiary).padding(.horizontal, 10)
+                Text("\(projects.count - 30) smaller projects not shown.").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
             }
         } else {
             CleanSection(title: "Project build folders", symbol: "folder.badge.gearshape", detail: "measuring…")
@@ -658,7 +658,7 @@ struct ProjectRow: View {
                     Spacer()
                     IconButton(symbol: "folder", help: "Reveal in Finder") { reveal(project.path) }
                 }
-                Text("They come back with the next npm/bun install, cargo build or swift build.").font(.caption).foregroundStyle(.tertiary)
+                Text("They come back with the next npm/bun install, cargo build or swift build.").font(.caption).foregroundStyle(.secondary)
             }
         }
     }
@@ -757,7 +757,7 @@ struct HelperFooter: View {
                 .help(on ? "Admin tiles go back to asking for your password; AirDrop holds stop."
                       : "Strain's helper runs the lock tiles, holds AirDrop off and reads Login Items without asking each time. macOS asks you to allow it once.")
         }
-        .font(.caption).foregroundStyle(.tertiary).padding(10)
+        .font(.caption).foregroundStyle(.secondary).padding(10)
     }
 }
 

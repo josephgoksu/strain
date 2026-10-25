@@ -4,6 +4,12 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-10-25
+
+### Fixed
+
+- Light mode is readable: the panel gets an opaque white base instead of the washed out menu bar material, and captions use a darker gray.
+
 ## [0.1.1] - 2026-10-25
 
 ### Added

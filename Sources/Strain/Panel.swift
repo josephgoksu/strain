@@ -5,6 +5,7 @@ import SwiftUI
 /// or expanding a row never resizes the window (the menu bar window doesn't resize cleanly).
 struct Panel: View {
     @Environment(Store.self) private var store
+    @Environment(\.colorScheme) private var scheme
     @AppStorage("rows") private var rows = 5
 
     var body: some View {
@@ -35,6 +36,8 @@ struct Panel: View {
             Footer()
         }
         .frame(width: 420)
+        // The menu bar window's material washes out in light mode; an opaque white base keeps text and cards legible.
+        .background(scheme == .light ? Color(nsColor: .textBackgroundColor) : .clear)
         .animation(.snappy(duration: 0.22), value: store.tab)
         .animation(.snappy(duration: 0.22), value: store.meter)
     }
@@ -78,7 +81,7 @@ struct Header: View {
                 .font(.callout).foregroundStyle(.secondary)
                 // Always present, so the header (and the panel) keeps one height across levels.
                 Text(m.level > .green ? "Since \(m.since.formatted(date: .omitted, time: .shortened))\(m.easing ? " · easing off" : "")" : "Checking every \(Int(Thresholds.interval)) s")
-                    .font(.caption).foregroundStyle(.tertiary).contentTransition(.opacity)
+                    .font(.caption).foregroundStyle(.secondary).contentTransition(.opacity)
             }
             Spacer(minLength: 6)
             MoreMenu()
