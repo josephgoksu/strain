@@ -11,6 +11,7 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 - Keep awake in Controls and the ⋯ menu: indefinitely or 10 min to 12 h, optionally letting the display sleep, sleeping while locked, or stopping on battery. A cup shows in the menu bar while on.
 - Check now in Clean: measures again, then names the three largest parts and when it was checked.
 - A weekly check: on AC power, while the Mac is calm, Strain measures Clean and notifies once when 5 GB or more can go. It deletes nothing.
+- Clean lists simulator runtimes no simulator uses (several GB each) with a Delete, Xcode Archives with Show in Finder, and iOS Device Logs.
 - Plain English explanation for whisper-cli.
 
 ### Changed

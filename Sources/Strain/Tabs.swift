@@ -706,6 +706,18 @@ struct SimulatorsSection: View {
     var body: some View {
         let sims = store.simulators.filter { $0.size > 0 || !$0.available }
         let unavailable = store.simulators.filter { !$0.available }.count
+        if !store.runtimes.isEmpty {
+            CleanSection(title: "Unused simulator runtimes", symbol: "externaldrive.badge.minus",
+                         detail: formatBytes(store.runtimes.reduce(0) { $0 + $1.size }))
+            ForEach(store.runtimes) { RuntimeRow(runtime: $0) }
+        }
+        if store.archives > 0 {
+            CleanSection(title: "Xcode Archives", symbol: "archivebox", detail: formatBytes(store.archives)) {
+                Button { NSWorkspace.shared.open(Store.archivesURL) } label: { Label("Show in Finder", systemImage: "folder") }
+                    .buttonStyle(HoverButtonStyle()).font(.caption)
+                    .help("The builds you archived for TestFlight or the App Store. Yours to keep: Strain won't delete them. Remove old ones in Finder or Xcode's Organizer.")
+            }
+        }
         if !sims.isEmpty {
             CleanSection(title: "Simulators", symbol: "iphone", detail: formatBytes(sims.reduce(0) { $0 + $1.size })) {
                 if unavailable > 0 {
@@ -764,6 +776,37 @@ struct SimulatorRow: View {
                 }
             }
         }
+    }
+}
+
+/// A simulator runtime no simulator uses. Delete goes through `simctl runtime delete`, never rm.
+struct RuntimeRow: View {
+    @Environment(Store.self) private var store
+    let runtime: SimRuntime
+
+    var body: some View {
+        let id = "runtime." + runtime.id, busy = store.cleaning.contains(id), result = store.cleaned[id]
+        HStack(spacing: 10) {
+            SymbolTile(symbol: "iphone.gen3", tint: .accentColor).frame(width: 30, height: 30)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 5) {
+                    Text(runtime.name).font(.body.weight(.semibold)).lineLimit(1)
+                    if let result, !busy { Pill(text: result.left > 0 ? "Delete failed" : "Freed \(formatBytes(result.freed))",
+                                                 color: result.left > 0 ? .orange : .green) }
+                }
+                Text("No simulator uses it" + (runtime.lastUsed.map { " · used " + $0.formatted(.relative(presentation: .named)) } ?? ""))
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            if busy { ProgressView().controlSize(.mini) } else {
+                Text(formatBytes(runtime.size)).font(.system(.callout, design: .rounded).weight(.semibold)).monospacedDigit()
+                ConfirmButton(title: "Delete", confirm: "Delete \(formatBytes(runtime.size))?", symbol: "trash") {
+                    withAnimation(.snappy) { store.deleteRuntime(runtime) }
+                }
+                .help("Xcode downloads it again if you add a simulator for this version.")
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
     }
 }
 

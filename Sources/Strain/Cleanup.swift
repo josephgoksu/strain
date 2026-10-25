@@ -31,6 +31,8 @@ enum Cleanup {
               symbol: "hammer.circle", kind: .folder("Library/Developer/Xcode/DerivedData")),
         .init(id: "devicesupport", title: "iOS DeviceSupport", detail: "Debug symbols per iOS version. Xcode copies them again when a device connects.",
               symbol: "iphone", kind: .folder("Library/Developer/Xcode/iOS DeviceSupport")),
+        .init(id: "devicelogs", title: "iOS Device Logs", detail: "Crash and console logs Xcode copied from your devices. Copied again on the next sync.",
+              symbol: "doc.text.magnifyingglass", kind: .folder("Library/Developer/Xcode/iOS Device Logs")),
         .init(id: "bun", title: "Bun cache", detail: "Downloaded packages. Bun fetches them again on install.",
               symbol: "shippingbox", kind: .folder(".bun/install/cache")),
         .init(id: "npm", title: "npm cache", detail: "Downloaded packages. npm fetches them again on install.",

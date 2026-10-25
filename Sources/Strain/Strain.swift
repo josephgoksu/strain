@@ -69,6 +69,8 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var cleaned: [String: CleanResult] = [:]
     private(set) var projects: [DevProject]?         // build folders in ~/Development and friends; nil until measured
     private(set) var simulators: [Simulator] = []
+    private(set) var runtimes: [SimRuntime] = []          // simulator runtimes no simulator uses
+    private(set) var archives: Int64 = 0                  // Xcode Archives: your shipped builds, data, so Reveal only
     let devRoots = DevCleanup.roots()
     private(set) var wifi: Bool?                      // nil = unknown (no Wi-Fi hardware, or not read yet)
     private(set) var bluetooth: Bool?
@@ -331,6 +333,10 @@ enum Tab: String, CaseIterable, Identifiable {
         async let found = Task.detached(priority: .utility) { DevCleanup.scan(roots: roots) }.value
         cleanSizes = await Task.detached(priority: .utility) { Cleanup.sizes(running: running) }.value
         simulators = await sims
+        let used = simulators
+        async let unused = Task.detached(priority: .utility) { DevCleanup.readUnusedRuntimes(simulators: used) }.value
+        archives = await Task.detached(priority: .utility) { Cleanup.size(of: Store.archivesURL) }.value
+        runtimes = await unused
         projects = await found
         disk = Disk.read()
         scanning = false
@@ -371,6 +377,7 @@ enum Tab: String, CaseIterable, Identifiable {
         var parts = Cleanup.items.map { ($0.title, cleanSizes?[$0.id] ?? 0) }
         parts.append(("Project build folders", (projects ?? []).reduce(0) { $0 + $1.size }))
         parts.append(("Simulators", simulators.reduce(0) { $0 + $1.size }))
+        parts.append(("Unused simulator runtimes", runtimes.reduce(0) { $0 + $1.size }))
         return parts.filter { $0.1 > 0 }.sorted { $0.1 > $1.1 }.map { (title: $0.0, bytes: $0.1) }
     }
 
@@ -453,6 +460,7 @@ enum Tab: String, CaseIterable, Identifiable {
     /// Bytes every Clean section can free right now.
     var cleanable: Int64 {
         (cleanSizes?.values.reduce(0, +) ?? 0) + (projects ?? []).reduce(0) { $0 + $1.size } + simulators.reduce(0) { $0 + $1.size }
+            + runtimes.reduce(0) { $0 + $1.size }
     }
 
     /// A project is in use while a server runs from inside it: its build folders stay.
@@ -487,6 +495,23 @@ enum Tab: String, CaseIterable, Identifiable {
             simulators = await Task.detached { DevCleanup.readSimulators() }.value
             let after = simulators.first { $0.udid == sim.udid }?.size ?? 0
             cleaned[id] = CleanResult(freed: ok ? max(0, sim.size - after) : 0, left: ok ? 0 : 1)
+            disk = Disk.read()
+            cleaning.remove(id)
+        }
+    }
+
+    nonisolated static let archivesURL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Developer/Xcode/Archives")
+
+    /// `simctl runtime delete`: frees the runtime's disk image. Xcode downloads it again if a simulator needs it.
+    func deleteRuntime(_ r: SimRuntime) {
+        let id = "runtime." + r.id
+        guard cleaning.insert(id).inserted else { return }
+        Task {
+            let used = simulators
+            let ok = await Task.detached { exitStatus("/usr/bin/xcrun", ["simctl", "runtime", "delete", r.id]) == 0 }.value
+            runtimes = await Task.detached { DevCleanup.readUnusedRuntimes(simulators: used) }.value
+            let gone = ok && !runtimes.contains { $0.id == r.id }
+            cleaned[id] = CleanResult(freed: gone ? r.size : 0, left: gone ? 0 : 1)
             disk = Disk.read()
             cleaning.remove(id)
         }
@@ -604,6 +629,7 @@ enum Tab: String, CaseIterable, Identifiable {
         if tab == .clean {
             cleanSizes = Cleanup.sizes(running: Cleanup.runningApps())
             (projects, simulators) = (DevCleanup.scan(roots: devRoots), DevCleanup.readSimulators())
+            (runtimes, archives) = (DevCleanup.readUnusedRuntimes(simulators: simulators), Cleanup.size(of: Store.archivesURL))
         }
         if tab == .controls { (wifi, bluetooth, screens) = (Radios.wifiOn(), Radios.bluetoothOn(), Displays.read(Displays.list())) }
         applyAWDL()

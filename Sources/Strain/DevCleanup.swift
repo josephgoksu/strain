@@ -26,6 +26,12 @@ struct Simulator: Identifiable, Equatable {
     var id: String { udid }
 }
 
+/// An installed simulator runtime (a multi-GB iOS image) and whether any simulator still runs on it.
+struct SimRuntime: Identifiable, Equatable {
+    let id: String, name: String, size: Int64
+    let lastUsed: Date?
+}
+
 /// Build folders in your projects and simulator data: the two biggest regenerable piles on a developer's Mac.
 enum DevCleanup {
     /// Build folder name → the manifest that must sit beside it, so an unrelated "target" or ".build" is never touched.
@@ -109,6 +115,23 @@ enum DevCleanup {
         let parts = (id.split(separator: ".").last ?? "").split(separator: "-")
         guard let os = parts.first else { return id }
         return parts.count > 1 ? "\(os) \(parts.dropFirst().joined(separator: "."))" : String(os)
+    }
+
+    /// Runtimes no simulator uses: Xcode can download them again. Only ones simctl marks deletable.
+    static func parseUnusedRuntimes(_ json: Data, simulators: [Simulator]) -> [SimRuntime] {
+        guard let root = try? JSONSerialization.jsonObject(with: json) as? [String: [String: Any]] else { return [] }
+        let used = Set(simulators.map(\.runtime)), iso = ISO8601DateFormatter()
+        return root.values.compactMap { r -> SimRuntime? in
+            guard let id = r["identifier"] as? String, let runtime = r["runtimeIdentifier"] as? String,
+                  r["deletable"] as? Bool ?? false, !used.contains(runtimeName(runtime)) else { return nil }
+            return SimRuntime(id: id, name: runtimeName(runtime) + ((r["build"] as? String).map { " (\($0))" } ?? ""),
+                              size: (r["sizeBytes"] as? NSNumber)?.int64Value ?? 0, lastUsed: (r["lastUsedAt"] as? String).flatMap(iso.date))
+        }
+        .sorted { $0.size > $1.size }
+    }
+
+    static func readUnusedRuntimes(simulators: [Simulator]) -> [SimRuntime] {
+        parseUnusedRuntimes(Data(run("/usr/bin/xcrun", ["simctl", "runtime", "list", "-j"], timeout: 30).utf8), simulators: simulators)
     }
 
     /// Needs Xcode; without it the list is empty and the section hides.

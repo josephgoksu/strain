@@ -315,3 +315,11 @@ Design and the slices still to build: `2026-10-25-weekly-check-design.md`.
 | Never | Deletes. Cleaning stays a click and a confirm in Clean |
 | Test | `--fake-week` runs it at the first tick and always notifies (prints under `swift run`) |
 
+## 24. Simulator runtimes, Archives, device logs (2026-10-25)
+
+| Part | What |
+|---|---|
+| Unused simulator runtimes | `simctl runtime list -j`: runtimes simctl marks deletable that no simulator uses. Delete = `simctl runtime delete` after a confirm, never `rm`. Counted in the total |
+| Xcode Archives | Size and Show in Finder only: shipped builds are data. Not counted in the total |
+| iOS Device Logs | A Clean row (`~/Library/Developer/Xcode/iOS Device Logs`) |
+

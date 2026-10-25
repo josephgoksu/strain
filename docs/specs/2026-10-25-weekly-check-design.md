@@ -1,6 +1,6 @@
 # Weekly check and wider Clean (design, 2026-10-25)
 
-Status: draft, waiting for approval. Once built, it folds into `strain.md` as a numbered section.
+Status: approved 2026-10-25. Slices 1 to 3 built (`strain.md` sections 23 and 24). Once built, it folds into `strain.md` as a numbered section.
 
 ## Goal
 
