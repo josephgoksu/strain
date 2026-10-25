@@ -332,3 +332,12 @@ One section in Clean. Caches and data split per tool.
 | Cache | Claude, Cursor, LM Studio: Chromium `Cache`, `Code Cache`, `GPUCache`, `Dawn*Cache` at the app's Application Support root and in each `Partitions/*` | Clean, refused while the app runs ("Quit Claude to clean"). Cookies, Local Storage, IndexedDB, the app folder itself: never on the allowlist. Counted in the total |
 | Data | Claude sandbox VM (`vm_bundles`), Claude Code and Codex transcripts, Codex runtime, Ollama, Hugging Face and LM Studio models | Size, model names, Show in Finder. Never deleted by Strain; not in the total |
 
+## 26. Where the space went (2026-10-25)
+
+Bottom of Clean, on a click only (Measure): about a minute of disk walking, and macOS may ask once for Desktop, Documents or Downloads. Never in the weekly check or the total.
+
+| Part | What |
+|---|---|
+| Largest folders | The ten largest folders exactly two levels under home (`~/Development/products`, `~/Library/Developer`). Skips other apps' containers, cloud folders, Mail, Messages and the Trash. Show in Finder only |
+| Old downloads | Items directly in Downloads not opened or changed for `Thresholds.oldDownloadDays` (90). Move to Trash after a confirm (recoverable), refused for anything outside Downloads |
+

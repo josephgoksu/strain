@@ -13,6 +13,7 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 - A weekly check: on AC power, while the Mac is calm, Strain measures Clean and notifies once when 5 GB or more can go. It deletes nothing.
 - Clean lists simulator runtimes no simulator uses (several GB each) with a Delete, Xcode Archives with Show in Finder, and iOS Device Logs.
 - AI tools in Clean: web caches of Claude, Cursor and LM Studio (cleaned only while closed), plus their data (sandbox VM, transcripts, models by name) sized and shown in Finder, never deleted.
+- Where the space went, in Clean on a click: the ten largest folders in your home folder, and downloads untouched for 90 days with Move to Trash.
 - Plain English explanation for whisper-cli.
 
 ### Changed

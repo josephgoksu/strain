@@ -581,6 +581,7 @@ struct CleanTab: View {
             AIToolsSection()
             ProjectsSection()
             SimulatorsSection()
+            SpaceSection()
             Text("Only things tools rebuild on their own: caches, build folders, simulator data. Apple's and running apps' caches are skipped.")
                 .font(.caption).foregroundStyle(.secondary).padding(10)
         }
@@ -654,6 +655,65 @@ struct AIDataRow: View {
             IconButton(symbol: "folder", help: "Show in Finder") { reveal(place.url().path) }
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
+    }
+}
+
+/// Where the space went: largest folders and old downloads. Measured only on a click, never in the total.
+struct SpaceSection: View {
+    @Environment(Store.self) private var store
+
+    var body: some View {
+        CleanSection(title: "Where the space went", symbol: "chart.pie") {
+            if store.measuringSpace {
+                ProgressView().controlSize(.mini)
+            } else {
+                Button { Task { await store.measureSpace() } } label: { Label(store.space == nil ? "Measure" : "Again", systemImage: "ruler") }
+                    .buttonStyle(HoverButtonStyle()).font(.caption)
+                    .help("Sizes every folder in your home folder. Takes a minute or two; macOS may ask once for Desktop, Documents or Downloads.")
+            }
+        }
+        if let space = store.space {
+            ForEach(space.folders) { entry in
+                SpaceRow(entry: entry, title: "~/" + Space.relative(entry.path, NSHomeDirectory()), caption: nil)
+            }
+            if !space.downloads.isEmpty {
+                CleanSection(title: "Old downloads", symbol: "arrow.down.circle",
+                             detail: "\(formatBytes(space.downloads.reduce(0) { $0 + $1.size })) untouched \(Int(Thresholds.oldDownloadDays))+ days")
+                ForEach(space.downloads) { entry in
+                    SpaceRow(entry: entry, title: (entry.path as NSString).lastPathComponent,
+                             caption: entry.untouched.map { "Last opened " + $0.formatted(.relative(presentation: .named)) }, trash: true)
+                }
+            }
+        } else if !store.measuringSpace {
+            Text("Largest folders in your home folder, and downloads you haven't opened in \(Int(Thresholds.oldDownloadDays)) days.")
+                .font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
+        } else {
+            Text("Measuring your home folder…").font(.caption).foregroundStyle(.secondary).padding(.horizontal, 10)
+        }
+    }
+}
+
+struct SpaceRow: View {
+    @Environment(Store.self) private var store
+    let entry: SpaceEntry, title: String, caption: String?
+    var trash = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+                if let caption { Text(caption).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+                if store.cleaned["dl." + entry.path] != nil { Text("Couldn't move it to the Trash").font(.caption).foregroundStyle(.orange) }
+            }
+            Spacer(minLength: 6)
+            Text(formatBytes(entry.size)).font(.system(.callout, design: .rounded).weight(.semibold)).monospacedDigit()
+            if trash {
+                ConfirmButton(title: "Trash", confirm: "Move to Trash?", symbol: "trash") { withAnimation(.snappy) { store.trashDownload(entry) } }
+                    .help("Moves it to the Trash. Empty the Trash to free the space; until then you can put it back.")
+            }
+            IconButton(symbol: "folder", help: "Show in Finder") { reveal(entry.path) }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
     }
 }
 

@@ -1,6 +1,6 @@
 # Weekly check and wider Clean (design, 2026-10-25)
 
-Status: approved 2026-10-25. Slices 1 to 4 built (`strain.md` sections 23 to 25). Slice 4 ships Show in Finder for data, not Move to Trash: Finder's own Trash covers it. Once built, it folds into `strain.md` as a numbered section.
+Status: approved 2026-10-25. Slices 1 to 5 built (`strain.md` sections 23 to 26). Slice 4 ships Show in Finder for data, not Move to Trash: Finder's own Trash covers it. Once built, it folds into `strain.md` as a numbered section.
 
 ## Goal
 

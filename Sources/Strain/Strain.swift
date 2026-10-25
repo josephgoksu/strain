@@ -71,7 +71,9 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var simulators: [Simulator] = []
     private(set) var runtimes: [SimRuntime] = []          // simulator runtimes no simulator uses
     private(set) var aiData: [String: (size: Int64, models: [String])] = [:]  // AIData.id → size, model names; data, never cleaned
-    private(set) var archives: Int64 = 0                  // Xcode Archives: your shipped builds, data, so Reveal only
+    private(set) var archives: Int64 = 0
+    private(set) var space: (folders: [SpaceEntry], downloads: [SpaceEntry])?  // nil until "Measure" is clicked
+    private(set) var measuringSpace = false                  // Xcode Archives: your shipped builds, data, so Reveal only
     let devRoots = DevCleanup.roots()
     private(set) var wifi: Bool?                      // nil = unknown (no Wi-Fi hardware, or not read yet)
     private(set) var bluetooth: Bool?
@@ -500,6 +502,23 @@ enum Tab: String, CaseIterable, Identifiable {
             disk = Disk.read()
             cleaning.remove(id)
         }
+    }
+
+    /// Where the space went: on a click only (minutes of disk walking, and macOS's folder prompts).
+    func measureSpace() async {
+        guard !measuringSpace else { return }
+        measuringSpace = true
+        async let downloads = Task.detached(priority: .utility) { Space.oldDownloads() }.value
+        let folders = await Task.detached(priority: .utility) { Space.largestFolders() }.value
+        space = (folders, await downloads)
+        measuringSpace = false
+    }
+
+    /// Moves an old download to the Trash, after the user's confirm.
+    func trashDownload(_ entry: SpaceEntry) {
+        guard Space.trash(entry.path) else { return cleaned["dl." + entry.path] = CleanResult(freed: 0, left: 1) }
+        space?.downloads.removeAll { $0.id == entry.id }
+        disk = Disk.read()
     }
 
     nonisolated static func readAIData() -> [String: (size: Int64, models: [String])] {

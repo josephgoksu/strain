@@ -56,3 +56,29 @@ import Testing
     let ollama = AIData.all.first { $0.id == "ollama" }!
     #expect(ollama.modelNames(home: home) == ["llama3.2:3b", "nomic-embed-text:latest", "someone/coder:q4"])
 }
+
+@Test func spaceRanksSubfoldersAndSkipsOtherAppsData() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent("strain-space-\(UUID())").path
+    defer { try? FileManager.default.removeItem(atPath: home) }
+    let fm = FileManager.default
+    for (dir, kb) in [("Development/big", 400), ("Development/small", 8), ("Library/Developer", 200), ("Library/Containers", 900)] {
+        try fm.createDirectory(atPath: home + "/" + dir, withIntermediateDirectories: true)
+        fm.createFile(atPath: home + "/" + dir + "/f", contents: Data(count: kb * 1024))
+    }
+    #expect(Space.largestFolders(home: home).map { Space.relative($0.path, home) } == ["Development/big", "Library/Developer", "Development/small"])
+}
+
+@Test func oldDownloadsAreUntouchedForNinetyDaysAndOnlyThoseCanBeTrashed() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent("strain-dl-\(UUID())").path
+    defer { try? FileManager.default.removeItem(atPath: home) }
+    let fm = FileManager.default, dl = home + "/Downloads"
+    try fm.createDirectory(atPath: dl, withIntermediateDirectories: true)
+    for name in ["old.dmg", "new.pdf"] { fm.createFile(atPath: dl + "/" + name, contents: Data(count: 4096)) }
+    var old = URL(fileURLWithPath: dl + "/old.dmg"), values = URLResourceValues()
+    values.contentModificationDate = .now - 200 * 86400
+    values.contentAccessDate = .now - 120 * 86400
+    try old.setResourceValues(values)
+    #expect(Space.oldDownloads(home: home).map { ($0.path as NSString).lastPathComponent } == ["old.dmg"])
+    fm.createFile(atPath: home + "/keep.txt", contents: Data())
+    #expect(!Space.trash(home + "/keep.txt", home: home) && fm.fileExists(atPath: home + "/keep.txt"))  // not in Downloads
+}
