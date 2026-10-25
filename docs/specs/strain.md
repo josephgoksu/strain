@@ -199,7 +199,7 @@ Everything lives in the menu bar panel; the Settings window is gone.
 
 ## 12. Clean tab (2026-10-22)
 
-CleanMyMac's quick wins, without its background agent or its guesswork.
+Quick wins, with no background agent and no guesswork.
 
 | Part | What |
 |---|---|
@@ -240,7 +240,7 @@ Wi-Fi and Bluetooth tiles above the quick actions, Control Center style: one cli
 
 ## 17. AirDrop link (AWDL) (2026-10-23)
 
-Replaces AWDL Control. Card in Controls under the radios: live state of awdl0 (getifaddrs), three modes and why it's in that state.
+Card in Controls under the radios: live state of awdl0 (getifaddrs), three modes and why it's in that state.
 
 | Mode | awdl0 |
 |---|---|
@@ -273,3 +273,19 @@ Trust both ways: the helper's listener requires Strain signed by team `J9GF96BYU
 `Strain --report` prints the running app's diagnostics (level, culprits, meters, servers, disk) and exits without showing anything. The app rewrites them to `~/Library/Application Support/Strain/status.txt` every tick, so the report is the live monitor's view; older than three ticks, it says Strain isn't running. Remote use goes over Tailscale SSH (`ssh <mac> …/Strain --report`) or Screen Sharing: Strain opens no port. A tailnet dashboard (read-only, `tailscale serve`, owner-only) was designed and shelved until this proves too little.
 
 `build.sh` builds universal (arm64 + x86_64). macOS 14 limits Intel to 2018 and later Macs. The Intel slice is untested: no Rosetta or Intel Mac here.
+
+## 21. Displays (2026-10-25)
+
+Card per screen in Controls under Connections; read fresh each time Controls opens or the screens change (the monitor's own buttons may have moved them).
+
+| Screen | Brightness | Volume |
+|---|---|---|
+| Built-in, Apple displays | private DisplayServices (what Control Center uses) | macOS's own |
+| Other external | DDC/CI VCP 0x10 over Apple silicon's `IOAVServiceWriteI2C`/`ReadI2C`, no install, no root | VCP 0x62 + mute 0x8D when the monitor has speakers |
+
+| Key | Goes to |
+|---|---|
+| Brightness, F14/F15 | the DDC monitor under the pointer; else macOS |
+| Volume, mute | the DDC monitor under the pointer (or the only one) when the audio output has no volume of its own (HDMI/DP audio); else macOS |
+
+Keys are opt-in ("Brightness and volume keys control these"): an active event tap on media keys needs Accessibility, and the card says so until it's granted. 1/16 steps, ⇧⌥ for 1/64. Warns when MonitorControl is running, since both answer the keys. Pairing: the framebuffer before each `DCPAVServiceProxy` in the registry carries the EDID vendor/product/serial, matched to `CGDisplay{Vendor,Model,Serial}Number`. Mute isn't read (monitors misreport it). Not built yet: contrast, software dimming below 0, built-in→external brightness sync, an on-screen OSD, Intel (`IOFBCopyI2CInterfaceForBus`) DDC.

@@ -74,6 +74,19 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var bluetooth: Bool?
     private(set) var switching: Set<String> = []      // "wifi" / "bluetooth" / "helper" while a switch is flipping
     private(set) var radioFailed: Set<String> = []    // the last switch macOS refused
+    private(set) var screens: [Screen] = []           // displays with brightness or volume Strain can set
+    /// Brightness and volume keys drive external monitors. Needs Accessibility.
+    var displayKeys = UserDefaults.standard.bool(forKey: "displayKeys") {
+        didSet {
+            UserDefaults.standard.set(displayKeys, forKey: "displayKeys")
+            if displayKeys { DisplayKeys.start(prompt: true) } else { DisplayKeys.stop() }
+            keysBlocked = displayKeys && !DisplayKeys.running
+        }
+    }
+    private(set) var keysBlocked = false              // keys on, but Accessibility not granted yet
+    @ObservationIgnored private var refreshingScreens = false
+    @ObservationIgnored private var screensStale = false    // a screen change arrived during a read
+    @ObservationIgnored private var touched: Set<String> = []  // "display.vcp" set while a screen read is in flight
     var awdlMode = AWDLMode(rawValue: UserDefaults.standard.string(forKey: "awdl") ?? "") ?? .normal {
         didSet {
             UserDefaults.standard.set(awdlMode.rawValue, forKey: "awdl")
@@ -124,6 +137,11 @@ enum Tab: String, CaseIterable, Identifiable {
         }
         guard !CommandLine.arguments.contains("--snapshot") else { return }
         if isApp { Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) } }
+        DisplayKeys.handler = { [weak self] key, flags in self?.handleKey(key, flags) ?? false }
+        if displayKeys { DisplayKeys.start(prompt: false); Task { await refreshScreens() } }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if let self, self.displayKeys { Task { await self.refreshScreens() } } }  // Controls re-reads on open
+        }
         Task { [weak self] in
             while let self {
                 await self.tick()
@@ -186,6 +204,8 @@ enum Tab: String, CaseIterable, Identifiable {
         let now = Date.now
         if let until = awdlPausedUntil, until <= now { awdlPausedUntil = nil }
         if tab == .controls { await refreshRadios() }  // the AirDrop status depends on both radios
+        if displayKeys { DisplayKeys.start(prompt: false) }  // picks up an Accessibility grant, or drops a revoked one
+        keysBlocked = displayKeys && !DisplayKeys.running
         applyAWDL()
         apply(s, procs, at: now)
         record(ticks, s, at: now)  // after apply: the history point carries this sample's swap rate
@@ -282,6 +302,58 @@ enum Tab: String, CaseIterable, Identifiable {
             await refreshRadios()
             switching.remove(id)
         }
+    }
+
+    /// Re-reads every screen's levels: the monitor's own buttons may have changed them.
+    /// Screen changes come in bursts (wake, resolution): one read at a time, plus one more if any arrived meanwhile.
+    func refreshScreens() async {
+        guard !refreshingScreens else { screensStale = true; return }
+        refreshingScreens = true
+        repeat {
+            (screensStale, touched) = (false, [])
+            let list = Displays.list()
+            let fresh = await Task.detached { Displays.read(list) }.value
+            screens = Displays.merge(fresh, old: screens, touched: touched)
+        } while screensStale
+        refreshingScreens = false
+    }
+
+    /// Slider or key: updates the shown value now and writes it in the background (DDC) or directly (built-in).
+    func setLevel(_ id: CGDirectDisplayID, _ vcp: VCP, _ value: Double) {
+        guard let i = screens.firstIndex(where: { $0.id == id }) else { return }
+        let v = min(max(value, 0), 1)
+        touched.insert("\(id).\(vcp.rawValue)")
+        switch vcp {
+        case .brightness:
+            screens[i].brightness = v
+            if screens[i].ddc { DDC.set(id, .brightness, v) } else { Native.setBrightness(id, v) }
+        case .volume:
+            screens[i].volume = v
+            DDC.set(id, .volume, v)
+            if screens[i].muted, v > 0 { setLevel(id, .mute, 0) }  // turning it up unmutes, like macOS
+        case .mute:
+            screens[i].muted = v > 0
+            DDC.set(id, .mute, v)
+        }
+    }
+
+    /// A media key. Returns true when Strain handled it (macOS never sees it). Brightness goes to the external
+    /// monitor under the pointer; volume to the monitor's speakers only when the audio output has no volume of its own.
+    func handleKey(_ key: MediaKey, _ flags: CGEventFlags) -> Bool {
+        let fine = flags.contains(.maskShift) && flags.contains(.maskAlternate), pointer = Displays.underPointer()
+        switch key.kind {
+        case .brightnessUp, .brightnessDown:
+            guard let s = screens.first(where: { $0.id == pointer && $0.ddc }), let b = s.brightness else { return false }
+            if key.down { setLevel(s.id, .brightness, Displays.step(b, up: key.kind == .brightnessUp, fine: fine)) }
+        case .volumeUp, .volumeDown, .mute:
+            let speakers = screens.filter { $0.ddc && $0.volume != nil }
+            // CoreAudio last: it's IPC to coreaudiod, and this runs inside the key tap
+            guard let s = speakers.first(where: { $0.id == pointer }) ?? (speakers.count == 1 ? speakers[0] : nil), let v = s.volume,
+                  !Displays.outputHasVolume() else { return false }
+            guard key.down else { return true }
+            if key.kind == .mute { setLevel(s.id, .mute, s.muted ? 0 : 1) } else { setLevel(s.id, .volume, Displays.step(v, up: key.kind == .volumeUp, fine: fine)) }
+        }
+        return true
     }
 
     /// Bytes every Clean section can free right now.
@@ -438,7 +510,7 @@ enum Tab: String, CaseIterable, Identifiable {
             cleanSizes = Cleanup.sizes(running: Cleanup.runningApps())
             (projects, simulators) = (DevCleanup.scan(roots: devRoots), DevCleanup.readSimulators())
         }
-        if tab == .controls { (wifi, bluetooth) = (Radios.wifiOn(), Radios.bluetoothOn()) }
+        if tab == .controls { (wifi, bluetooth, screens) = (Radios.wifiOn(), Radios.bluetoothOn(), Displays.read(Displays.list())) }
         applyAWDL()
         for i in 0..<Thresholds.hold { apply(s, procs, at: .now - Thresholds.interval * Double(Thresholds.hold - 1 - i)) }
         if args.contains("--expand") {

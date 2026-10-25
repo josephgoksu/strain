@@ -1,7 +1,7 @@
 import Foundation
 import HelperKit
 
-/// One-click maintenance, the kind CleanMyMac sells. Every one is a stock macOS command; nothing here is irreversible
+/// One-click maintenance. Every one is a stock macOS command; nothing here is irreversible
 /// except Empty Trash, and every tile needs a second click to run.
 struct QuickAction: Identifiable {
     let id: String

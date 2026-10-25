@@ -4,6 +4,16 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 
 ## [Unreleased]
 
+### Added
+
+- Displays in Controls: brightness for every screen, plus volume for monitors with speakers (DDC/CI on Apple silicon).
+- Optional brightness and volume keys for external monitors, following the pointer; F14/F15 work as brightness keys. Needs Accessibility.
+- Plain English explanation for whisper-cli.
+
+### Changed
+
+- New README art.
+
 ## [0.1.2] - 2026-10-25
 
 ### Fixed

@@ -4,8 +4,8 @@
 
 <h1 align="center">Strain</h1>
 
-<p align="center"><b>What's straining your Mac, in plain English.</b><br>
-A menu bar app that watches memory pressure, swap, CPU and disk, and names the app behind the slowdown.</p>
+<p align="center"><b>What's slowing your Mac, in plain English.</b><br>
+A menu bar app that names the app behind the slowdown, frees the space your tools rebuild, and puts the switches you reach for (Wi-Fi, AirDrop, display brightness and volume) one click away.</p>
 
 <p align="center">
   <img src="https://img.shields.io/badge/macOS-14%2B-black?logo=apple" alt="macOS 14+">
@@ -15,24 +15,28 @@ A menu bar app that watches memory pressure, swap, CPU and disk, and names the a
   <img src="https://img.shields.io/github/license/josephgoksu/strain?color=FFA62B" alt="MIT license">
 </p>
 
-<p align="center"><img src="docs/hero.png" alt="Strain panels: CPU cores, memory breakdown, controls"></p>
+<p align="center"><img src="docs/hero.png" alt="Strain panels: likely culprits, controls with display sliders, cleanable space"></p>
 
 ## Why
 
-Activity Monitor lists 600 processes and leaves the diagnosis to you. Strain answers one question, *why is my Mac slow right now?*, in plain words: "Memory pressure is high. Top culprit: Xcode, 9 GB." It never acts without a click.
+600 processes don't tell you why the Mac is slow. Strain says it in one line: "Memory pressure is high. Top culprit: Xcode, 9 GB." It never acts without a click.
 
 ## What it does
 
 | Tab | Shows | You can |
 |---|---|---|
-| **Apps** | Processes grouped by app, ranked by whatever is straining the Mac (memory or CPU), each explained | Quit or shut down, after a confirm |
+| **Apps** | Processes grouped by app, ranked by what's straining the Mac (memory or CPU), each explained | Quit or shut down, after a confirm |
 | **Servers** | Every TCP listener: project, ports, local or open to your network | Open `localhost:<port>`, stop it |
-| **Background** | Login items and launch agents, which are running, which run as root | Jump to System Settings |
-| **Controls** | Wi-Fi, Bluetooth, the AirDrop vs low-ping link, one-click macOS fixes | Restart Dock, flush DNS, restart audio… |
-| **Clean** | Regenerable space: dev caches, stale `node_modules`/`target`, simulator data | Delete with a confirm |
+| **Background** | Login items and launch agents, which run, which run as root | Jump to System Settings |
+| **Controls** | Wi-Fi, Bluetooth, AirDrop vs low ping, brightness and speaker volume per display, one-click macOS fixes | Restart Dock, flush DNS, restart audio, drive an external monitor's brightness and volume from your keyboard |
+| **Clean** | Space tools rebuild on their own: dev caches, stale `node_modules`/`target`, simulator data | Delete with a confirm |
 | **Unknown** | Processes Strain can't explain yet | Ask AI to write the explanations |
 
 The three meters open into detail views: memory breakdown, per-core load (Performance vs Efficiency), swap activity and 10 minutes of history.
+
+### External displays
+
+Brightness and volume go to the monitor itself over DDC/CI (Apple silicon, no driver). Turn on **Brightness and volume keys control these** in Controls and allow Accessibility once: the keys then drive the monitor under the pointer, and F14/F15 work as brightness keys. The built-in screen and speakers with their own volume stay with macOS.
 
 ## Levels
 
@@ -78,6 +82,7 @@ Off, everything still works through macOS's password prompt.
 | | |
 |---|---|
 | Network | None at runtime. No telemetry, no LLM calls, no update checks |
+| Permissions | Accessibility only if you turn on display keys: Strain looks at brightness, volume and F14/F15 key codes and ignores every other key. Bluetooth only for its switch |
 | Ports | Opens none |
 | Data | Stays in `~/Library/Application Support/Strain` |
 | Ask AI | Copies a prompt to your clipboard; you choose where to paste it |
@@ -98,7 +103,7 @@ Prints the running Strain's live status (level, culprits, meters, servers, disk)
 | Screenshot | `Strain --snapshot out.png --tab=apps --meter=cpu --dark --fake-red` |
 | Release | Add a CHANGELOG section, push tag `vX.Y.Z`: CI tests, builds, signs and notarizes (when the secrets are set), smoke-launches, publishes `Strain.zip` + sha256 and updates the Homebrew cask |
 | Icon | `swift scripts/icon.swift` |
-| README art | `swift scripts/readme-art.swift cpu.png memory.png controls.png` |
+| README art | `swift scripts/readme-art.swift apps.png controls.png clean.png` (snapshots with `--dark`) |
 | Spec | [`docs/specs/strain.md`](docs/specs/strain.md) |
 | Learnings | [`context/`](context/) |
 | Agent rules | [`AGENTS.md`](AGENTS.md) |

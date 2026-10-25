@@ -513,6 +513,13 @@ struct ControlsTab: View {
             }
             .padding(.horizontal, 10).padding(.bottom, 6)
             if store.awdlUp != nil { AWDLCard().padding(.horizontal, 10).padding(.bottom, 6) }
+            if !store.screens.isEmpty {
+                CleanSection(title: "Displays", symbol: "display")
+                ForEach(store.screens) { ScreenCard(screen: $0).padding(.horizontal, 10).padding(.bottom, 6) }
+                if store.displayKeys || store.screens.contains(where: \.ddc) {  // keys only drive external monitors
+                    DisplayKeysRow().padding(.horizontal, 10).padding(.bottom, 6)
+                }
+            }
             ForEach(QuickAction.Group.allCases, id: \.self) { group in
                 CleanSection(title: group.rawValue, symbol: symbol(group))
                 LazyVGrid(columns: columns, spacing: 6) {
@@ -522,7 +529,11 @@ struct ControlsTab: View {
             }
             HelperFooter()
         }
-        .task { await store.refreshRadios() }
+        .task {
+            async let screens: Void = store.refreshScreens()
+            await store.refreshRadios()
+            await screens
+        }
     }
 
     private func symbol(_ g: QuickAction.Group) -> String {
@@ -894,6 +905,79 @@ struct RadioTile: View {
         .animation(.snappy, value: armedAt)
         .help(isOn ? "Turn \(title) off" + (id == "bluetooth" ? ". Bluetooth keyboards, mice and AirPods disconnect." : ".") : "Turn \(title) on")
         .accessibilityLabel(title).accessibilityValue(isOn ? "On" : "Off").accessibilityAddTraits(.isToggle)
+    }
+}
+
+/// One display's brightness, and for monitors with speakers, volume and mute. A value DDC couldn't read hides its row.
+struct ScreenCard: View {
+    @Environment(Store.self) private var store
+    let screen: Screen
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(screen.name).font(.callout.weight(.semibold))
+            if let b = screen.brightness {
+                LevelRow(symbol: "sun.max.fill", value: b, label: "Brightness") { store.setLevel(screen.id, .brightness, $0) }
+            }
+            if let v = screen.volume {
+                LevelRow(symbol: screen.muted ? "speaker.slash.fill" : "speaker.wave.2.fill", value: screen.muted ? 0 : v, label: "Volume",
+                         toggle: (screen.muted ? "Unmute" : "Mute", { store.setLevel(screen.id, .mute, screen.muted ? 0 : 1) })) {
+                    store.setLevel(screen.id, .volume, $0)
+                }
+            }
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.primary.opacity(0.04)))
+    }
+}
+
+struct LevelRow: View {
+    let symbol: String, value: Double, label: String
+    var toggle: (label: String, action: () -> Void)? = nil
+    let set: (Double) -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            SwiftUI.Group {
+                if let toggle {
+                    Button(action: toggle.action) { Image(systemName: symbol) }.buttonStyle(.plain).help(toggle.label).accessibilityLabel(toggle.label)
+                } else {
+                    Image(systemName: symbol)
+                }
+            }
+            .foregroundStyle(.secondary).frame(width: 18).contentTransition(.symbolEffect(.replace))
+            Slider(value: Binding(get: { value }, set: set)).controlSize(.small).accessibilityLabel(label)
+            Text("\(Int((value * 100).rounded()))%").font(.caption.monospacedDigit()).foregroundStyle(.secondary).frame(width: 34, alignment: .trailing)
+        }
+    }
+}
+
+/// The switch that hands the brightness and volume keys to Strain, and what's stopping it.
+struct DisplayKeysRow: View {
+    @Environment(Store.self) private var store
+
+    var body: some View {
+        @Bindable var store = store
+        VStack(alignment: .leading, spacing: 4) {
+            Toggle("Brightness and volume keys control these", isOn: $store.displayKeys).toggleStyle(.switch).controlSize(.mini).font(.caption)
+            SwiftUI.Group {
+                if store.keysBlocked {
+                    HStack(spacing: 4) {
+                        Text(AXIsProcessTrusted() ? "Accessibility is allowed, but macOS refused the key listener."
+                                                  : "Allow Strain under Privacy & Security → Accessibility.")
+                        Button("Open Settings") {
+                            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
+                        }
+                        .buttonStyle(HoverButtonStyle()).foregroundStyle(Color.accentColor)
+                    }
+                } else if store.displayKeys, Displays.monitorControlRunning() {
+                    Text("MonitorControl is running too: quit it, or both answer the keys.").foregroundStyle(.orange)
+                } else {
+                    Text("Keys follow the pointer: the built-in screen and speakers with their own volume stay with macOS. Hold ⇧⌥ for fine steps.")
+                }
+            }
+            .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
 

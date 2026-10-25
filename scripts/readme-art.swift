@@ -1,6 +1,6 @@
 // Draws the README hero and GitHub social card from panel snapshots. Run from the repo root:
-//   swift scripts/readme-art.swift <cpu.png> <memory.png> <controls.png>
-// Snapshots come from `Strain --snapshot out.png --meter=cpu --dark` etc. Writes docs/hero.png and docs/social.png.
+//   swift scripts/readme-art.swift <apps.png> <controls.png> <clean.png>
+// Snapshots come from `Strain --snapshot out.png --tab=apps --dark` etc. Writes docs/hero.png and docs/social.png.
 import AppKit
 
 func srgb(_ hex: UInt32, _ a: CGFloat = 1) -> NSColor {
@@ -46,28 +46,45 @@ func text(_ s: String, size: CGFloat, weight: NSFont.Weight, alpha: CGFloat = 1,
                                                  .foregroundColor: NSColor.white.withAlphaComponent(alpha)])
 }
 
-let args = CommandLine.arguments.dropFirst().map { NSImage(contentsOfFile: $0)! }
-guard args.count == 3 else { fatalError("usage: readme-art.swift <cpu.png> <memory.png> <controls.png>") }
+let paths = Array(CommandLine.arguments.dropFirst())
+guard paths.count == 3 else { fatalError("usage: readme-art.swift <apps.png> <controls.png> <clean.png>") }
+let shots = paths.map { NSImage(contentsOfFile: $0)! }
 let icon = NSImage(contentsOfFile: "docs/icon.png")!
 
-// Hero: three panels, the middle one raised, on the heat gradient.
-let hero = canvas(2400, 1300) { r in
+/// Centered single line of white text.
+func centered(_ s: String, size: CGFloat, weight: NSFont.Weight, alpha: CGFloat = 1, midX: CGFloat, y: CGFloat) {
+    let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size, weight: weight),
+                                                .foregroundColor: NSColor.white.withAlphaComponent(alpha)]
+    let w = (s as NSString).size(withAttributes: attrs).width
+    (s as NSString).draw(at: NSPoint(x: midX - w / 2, y: y), withAttributes: attrs)
+}
+
+// Hero: name and promise on top, three panels below, each with what it's for.
+let captions = ["Names the culprit", "Switches, fixes, displays", "Frees what tools rebuild"]
+let hero = canvas(2400, 1560) { r in
     heat.draw(in: r, angle: -30)
-    let w: CGFloat = 640, h = w * args[0].size.height / args[0].size.width
-    let xs: [CGFloat] = [140, 880, 1620], lift: [CGFloat] = [0, 60, 0]
-    for (i, img) in args.enumerated() { panel(img, in: NSRect(x: xs[i], y: (r.height - h) / 2 - 30 + lift[i], width: w, height: h)) }
+    icon.draw(in: NSRect(x: r.midX - 330, y: 1300, width: 150, height: 150))
+    text("Strain", size: 120, weight: .bold, at: NSPoint(x: r.midX - 150, y: 1300))
+    centered("What's slowing your Mac, in plain English. Plus the switches you reach for.", size: 44, weight: .medium, alpha: 0.9, midX: r.midX, y: 1205)
+    let w: CGFloat = 660, h = w * shots[0].size.height / shots[0].size.width
+    let xs: [CGFloat] = [105, 870, 1635], lift: [CGFloat] = [0, 40, 0]
+    for (i, img) in shots.enumerated() {
+        let y = 80 + lift[i]
+        panel(img, in: NSRect(x: xs[i], y: y, width: w, height: h))
+        centered(captions[i], size: 34, weight: .semibold, alpha: 0.95, midX: xs[i] + w / 2, y: y + h + 22)
+    }
 }
 try! hero.write(to: URL(fileURLWithPath: "docs/hero.png"))
 
-// Social card, GitHub's 1280×640: icon, name, one line, one panel.
+// Social card, GitHub's 1280×640: icon, name, one line, the Apps panel.
 let social = canvas(1280, 640) { r in
     heat.draw(in: r, angle: -30)
-    icon.draw(in: NSRect(x: 40, y: 330, width: 260, height: 260))
-    text("Strain", size: 92, weight: .bold, at: NSPoint(x: 80, y: 200))
-    text("What's straining your Mac,", size: 36, weight: .medium, alpha: 0.92, at: NSPoint(x: 84, y: 140))
-    text("in plain English.", size: 36, weight: .medium, alpha: 0.92, at: NSPoint(x: 84, y: 96))
-    let w: CGFloat = 470, h = w * args[0].size.height / args[0].size.width
-    panel(args[0], in: NSRect(x: 740, y: 40 - (h - 560), width: w, height: h))
+    icon.draw(in: NSRect(x: 64, y: 380, width: 200, height: 200))
+    text("Strain", size: 104, weight: .bold, at: NSPoint(x: 72, y: 220))
+    text("What's slowing your Mac,", size: 38, weight: .medium, alpha: 0.92, at: NSPoint(x: 78, y: 150))
+    text("in plain English.", size: 38, weight: .medium, alpha: 0.92, at: NSPoint(x: 78, y: 104))
+    let w: CGFloat = 470, h = w * shots[0].size.height / shots[0].size.width
+    panel(shots[0], in: NSRect(x: 730, y: 40 - (h - 560), width: w, height: h))
 }
 try! social.write(to: URL(fileURLWithPath: "docs/social.png"))
 print("wrote docs/hero.png, docs/social.png")
