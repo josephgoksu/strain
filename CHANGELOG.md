@@ -14,6 +14,8 @@ All notable changes to Strain. Format: [Keep a Changelog](https://keepachangelog
 - Clean lists simulator runtimes no simulator uses (several GB each) with a Delete, Xcode Archives with Show in Finder, and iOS Device Logs.
 - AI tools in Clean: web caches of Claude, Cursor and LM Studio (cleaned only while closed), plus their data (sandbox VM, transcripts, models by name) sized and shown in Finder, never deleted.
 - Where the space went, in Clean on a click: the ten largest folders in your home folder, and downloads untouched for 90 days with Move to Trash.
+- Old logs in Clean: log files and crash reports older than 30 days.
+- Background badges: Leftover (its app or launch file is gone), Not notarized (apps Gatekeeper rejects), Unsigned (programs with no valid signature).
 - Plain English explanation for whisper-cli.
 
 ### Changed

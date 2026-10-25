@@ -28,6 +28,7 @@ struct BackgroundItem: Identifiable, Equatable {
     var url: String?
     var executable: String?
     var bundleID: String?
+    var parent: String? = nil   // BTM identifier of the app a helper sits inside
     var id: String { "\(kind.rawValue)|\(name)|\(url ?? "")" }
 
     /// The launchd label for plist-based agents: names like "bash" say nothing, the label does.
@@ -40,6 +41,18 @@ struct BackgroundItem: Identifiable, Equatable {
     var app: String? { name.hasSuffix(" - background tasks") ? String(name.dropLast(" - background tasks".count)) : nil }
 
     var asRoot: Bool { kind == .daemon }
+
+    /// The file on disk this item starts: its program, else its app. Nil when a shell runs it or the path is relative.
+    var target: String? {
+        if let exe = executable.map(localPath), exe.hasPrefix("/"), !isInterpreter((exe as NSString).lastPathComponent) { return exe }
+        if let u = url.map(localPath), u.hasPrefix("/"), !u.hasSuffix(".plist") { return u }
+        return nil
+    }
+
+    /// Its app, program or launch file is gone, so it can't run: a leftover of a removed app. macOS keeps the entry anyway.
+    var missing: Bool {
+        [url.map(localPath), target].compactMap { $0 }.filter { $0.hasPrefix("/") }.contains { !FileManager.default.fileExists(atPath: $0) }
+    }
 
     /// The item's own name, unless it's just the interpreter that runs it ("bash" says nothing about the job).
     private var ownName: String? { isInterpreter(name) ? nil : name }
@@ -77,8 +90,10 @@ struct BackgroundItem: Identifiable, Equatable {
 func parseBTM(_ text: String) -> [BackgroundItem] {
     var items: [BackgroundItem] = []
     var f: [String: String] = [:]
+    var urls: [String: String] = [:]  // every record's identifier → URL, skipped ones too: a helper's parent may be one
     func flush() {
         defer { f = [:] }
+        if let id = f["Identifier"], let u = f["URL"], u != "(null)" { urls[id] = u }
         guard let name = f["Name"], let type = f["Type"], let disp = f["Disposition"] else { return }
         let enabled = disp.contains("[enabled"), allowed = !disp.contains("disallowed")
         let kind: BackgroundItem.Kind
@@ -93,7 +108,8 @@ func parseBTM(_ text: String) -> [BackgroundItem] {
         let value = { (k: String) in f[k].flatMap { $0 == "(null)" ? nil : $0 } }
         items.append(BackgroundItem(name: name, developer: value("Developer Name"), kind: kind,
                                     status: !allowed ? .blocked : enabled ? .on : .off,
-                                    url: value("URL"), executable: value("Executable Path"), bundleID: value("Bundle Identifier")))
+                                    url: value("URL"), executable: value("Executable Path"), bundleID: value("Bundle Identifier"),
+                                    parent: value("Parent Identifier")))
     }
     for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
         let t = line.trimmingCharacters(in: .whitespaces)
@@ -102,7 +118,40 @@ func parseBTM(_ text: String) -> [BackgroundItem] {
         f[String(t[..<colon.lowerBound])] = String(t[colon.upperBound...])
     }
     flush()
-    return items
+    // Helpers inside an app list paths relative to it ("Contents/Library/LoginItems/X.app"): anchor them to the app.
+    return items.map { item in
+        var item = item
+        guard let base = item.parent.flatMap({ urls[$0] }), base.hasPrefix("/") else { return item }
+        if let u = item.url, !u.hasPrefix("/") { item.url = base + "/" + u }
+        if let e = item.executable, !e.hasPrefix("/") { item.executable = base + "/" + e }
+        return item
+    }
+}
+
+/// Login Items writes the home folder as "/Users/<uid>"; on disk it's the real home.
+func localPath(_ path: String) -> String {
+    let uidHome = "/Users/\(getuid())/"
+    return path.hasPrefix(uidHome) ? NSHomeDirectory() + "/" + path.dropFirst(uidHome.count) : path
+}
+
+/// Whether a background program is signed by a known developer. Apps: Gatekeeper's notarization check. Bare programs:
+/// a valid signature (Gatekeeper can't assess those, it says "not an app"). Scripts: nothing, they're readable.
+enum Signing {
+    static func badge(_ path: String) -> String? {
+        if path.hasSuffix(".app") {
+            let out = run("/usr/sbin/spctl", ["--assess", "--type", "execute", "-v", path], stderr: true)
+            return out.contains(": accepted") ? nil : "Not notarized"
+        }
+        guard isMachO(path) else { return nil }
+        return exitStatus("/usr/bin/codesign", ["--verify", path]) == 0 ? nil : "Unsigned"
+    }
+
+    static func isMachO(_ path: String) -> Bool {
+        guard let h = FileHandle(forReadingAtPath: path), let d = try? h.read(upToCount: 4), d.count == 4 else { return false }
+        try? h.close()
+        let magic = d.withUnsafeBytes { $0.load(as: UInt32.self) }
+        return [0xFEEDFACF, 0xCFFAEDFE, 0xCAFEBABE, 0xBEBAFECA, 0xFEEDFACE, 0xCEFAEDFE].contains(magic)
+    }
 }
 
 /// Runs `sfltool dumpbtm`. Since macOS 27 it asks for admin (Touch ID), so it only runs on the user's click;

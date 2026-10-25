@@ -372,6 +372,14 @@ struct BackgroundRow: View {
                         case .blocked: Pill(text: "Blocked", color: .orange, symbol: "hand.raised.fill")
                         }
                         if item.asRoot { Pill(text: "Admin", color: .purple, symbol: "lock.shield.fill") }
+                        if item.missing {
+                            Pill(text: "Leftover", color: .orange, symbol: "questionmark.app")
+                                .help("Its app or launch file is gone, so it can't run: a leftover of a removed app. Turn it off in Login Items.")
+                        } else if let badge = item.target.flatMap({ store.signing[$0] }) {
+                            Pill(text: badge, color: .orange, symbol: "exclamationmark.shield")
+                                .help(badge == "Unsigned" ? "No valid code signature: nobody vouches for this program. Keep it only if you know what installed it."
+                                                         : "Gatekeeper wouldn't open this app as downloaded: Apple hasn't checked it. Fine for apps you built yourself.")
+                        }
                     }
                     Text(e.what).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }

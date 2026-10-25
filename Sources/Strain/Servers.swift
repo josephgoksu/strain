@@ -122,12 +122,13 @@ func sampleServers(procs: [Proc]) -> [Server] {
 }
 
 /// Runs a tool and returns its stdout. Killed after `timeout`: a hung tool must not freeze a tick or a tab.
-func run(_ exe: String, _ args: [String], timeout: TimeInterval = 15) -> String {
+/// `stderr`: read it too, for tools that report there (spctl).
+func run(_ exe: String, _ args: [String], timeout: TimeInterval = 15, stderr: Bool = false) -> String {
     let p = Process(), pipe = Pipe()
     p.executableURL = URL(fileURLWithPath: exe)
     p.arguments = args
     p.standardOutput = pipe
-    p.standardError = FileHandle.nullDevice
+    p.standardError = stderr ? pipe : FileHandle.nullDevice
     p.qualityOfService = Thread.current.qualityOfService  // a tool started from a low-priority tick stays low-priority
     guard (try? p.run()) != nil else { return "" }
     let killer = DispatchWorkItem { if p.isRunning { p.terminate() } }  // isRunning: never signal a recycled pid

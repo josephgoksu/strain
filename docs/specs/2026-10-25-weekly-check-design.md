@@ -1,6 +1,6 @@
 # Weekly check and wider Clean (design, 2026-10-25)
 
-Status: approved 2026-10-25. Slices 1 to 5 built (`strain.md` sections 23 to 26). Slice 4 ships Show in Finder for data, not Move to Trash: Finder's own Trash covers it. Once built, it folds into `strain.md` as a numbered section.
+Status: approved 2026-10-25. All six slices built (`strain.md` sections 23 to 27). Slice 6 names the badge "Leftover", not "App missing": a dead launch file counts too. Slice 4 ships Show in Finder for data, not Move to Trash: Finder's own Trash covers it. Once built, it folds into `strain.md` as a numbered section.
 
 ## Goal
 

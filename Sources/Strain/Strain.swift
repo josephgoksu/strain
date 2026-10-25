@@ -57,7 +57,8 @@ enum Tab: String, CaseIterable, Identifiable {
     private(set) var background: [BackgroundItem]?   // nil until the Background tab is first opened (~3 s read)
     private(set) var loadingBackground = false
     private(set) var backgroundRead: Date?           // when the shown list was read (it may come from the cache)
-    private(set) var backgroundFailed = false        // last read was cancelled or timed out
+    private(set) var backgroundFailed = false
+    private(set) var signing: [String: String] = [:]  // item target path → "Not notarized" / "Unsigned"; absent = fine or unchecked        // last read was cancelled or timed out
     private(set) var cores: [Double] = []            // busy fraction per core over the last interval
     private(set) var history: [HistoryPoint] = []    // last 10 minutes, one point per tick
     private(set) var swapInRate = 0.0                // MB/min read back from swap
@@ -162,6 +163,7 @@ enum Tab: String, CaseIterable, Identifiable {
             background = sortedBackground(dedupe(parseBTM(cached.text)))
             backgroundRead = cached.date
         }
+        if !CommandLine.arguments.contains("--snapshot") { Task { await checkSigning() } }
         guard !CommandLine.arguments.contains("--snapshot") else { return }
         if isApp { Task { _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) } }
         DisplayKeys.handler = { [weak self] key, flags in self?.handleKey(key, flags) ?? false }
@@ -321,8 +323,17 @@ enum Tab: String, CaseIterable, Identifiable {
         if !items.isEmpty {
             LoginItemsCache.save(text)
             (background, backgroundRead) = (sortedBackground(items), .now)
+            await checkSigning()
         }
         loadingBackground = false
+    }
+
+    /// Gatekeeper and codesign on each item's program, off the main thread (~100 ms each, so a few seconds in all).
+    func checkSigning() async {
+        let targets = Set((background ?? []).filter { !$0.missing }.compactMap(\.target))
+        signing = await Task.detached(priority: .utility) {
+            Dictionary(uniqueKeysWithValues: targets.compactMap { t in Signing.badge(t).map { (t, $0) } })
+        }.value
     }
 
     /// Sizes every Clean item off the main thread (seconds on a big cache folder). One scan at a time.

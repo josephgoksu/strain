@@ -5,7 +5,8 @@ struct RunningApp { var name: String, bundleID: String }
 /// A place that only holds regenerable data: tools and apps rebuild it on demand.
 struct CleanItem: Identifiable, Equatable {
     /// folder: path relative to home. chromium: an Electron app's web caches under Application Support (an AI tool's).
-    enum Kind: Equatable { case folder(String), appCaches, chromium(app: String, bundleID: String) }
+    /// olderThan: only files in the folder (and below) untouched for that many days.
+    enum Kind: Equatable { case folder(String), appCaches, chromium(app: String, bundleID: String), olderThan(String, days: Double) }
     let id: String
     let title: String
     let detail: String
@@ -13,7 +14,7 @@ struct CleanItem: Identifiable, Equatable {
     let kind: Kind
     var folder: String? {
         switch kind {
-        case .folder(let rel): rel
+        case .folder(let rel), .olderThan(let rel, _): rel
         case .chromium(let app, _): "Library/Application Support/" + app
         case .appCaches: nil
         }
@@ -64,6 +65,8 @@ enum Cleanup {
               symbol: "shippingbox", kind: .folder("Library/Caches/CocoaPods")),
         .init(id: "brew", title: "Homebrew downloads", detail: "Installer downloads Homebrew keeps after installing.",
               symbol: "mug", kind: .folder("Library/Caches/Homebrew")),
+        .init(id: "logs", title: "Old logs", detail: "Logs and crash reports older than 30 days. Recent ones stay, for when something breaks.",
+              symbol: "doc.plaintext", kind: .olderThan("Library/Logs", days: 30)),
         .init(id: "claude", title: "Claude", detail: "Claude's web caches: pages, scripts, GPU shaders. Rebuilt on launch. Your chats stay.",
               symbol: "sparkle", kind: .chromium(app: "Claude", bundleID: "com.anthropic.claudefordesktop")),
         .init(id: "cursor", title: "Cursor", detail: "Cursor's web caches: pages, scripts, GPU shaders. Rebuilt on launch. Settings and projects stay.",
@@ -150,6 +153,17 @@ enum Cleanup {
         .sorted { $0.lastPathComponent < $1.lastPathComponent }
     }
 
+    /// Files (not folders, not symlinks) under `rel` not modified for `days`.
+    static func oldFiles(in rel: String, days: Double, home: String = NSHomeDirectory(), now: Date = .now) -> [URL] {
+        let keys: [URLResourceKey] = [.isRegularFileKey, .contentModificationDateKey]
+        guard let walker = FileManager.default.enumerator(at: URL(fileURLWithPath: home + "/" + rel), includingPropertiesForKeys: keys,
+                                                          options: [], errorHandler: { _, _ in true }) else { return [] }
+        return walker.compactMap { $0 as? URL }.filter {
+            let v = try? $0.resourceValues(forKeys: Set(keys))
+            return v?.isRegularFile == true && now.timeIntervalSince(v?.contentModificationDate ?? now) > days * 86400
+        }
+    }
+
     static let chromiumCaches = ["Cache", "Code Cache", "GPUCache", "DawnWebGPUCache", "DawnGraphiteCache"]
 
     /// The Chromium cache folders of an Electron app, at its root and in each `Partitions/*` (Claude keeps a
@@ -176,11 +190,13 @@ extension Cleanup {
         case .folder(let rel): [URL(fileURLWithPath: home + "/" + rel)]
         case .appCaches: appCacheFolders(home: home, running: running)
         case .chromium: chromiumFolders(item, home: home)
+        case .olderThan(let rel, _): [URL(fileURLWithPath: home + "/" + rel)]
         }
     }
 
     static func size(_ item: CleanItem, running: [RunningApp]) -> Int64 {
-        folders(item, running: running).reduce(0) { $0 + size(of: $1) }
+        if case .olderThan(let rel, let days) = item.kind { return oldFiles(in: rel, days: days).reduce(0) { $0 + size(of: $1) } }
+        return folders(item, running: running).reduce(0) { $0 + size(of: $1) }
     }
 
     static func sizes(running: [RunningApp]) -> [String: Int64] {
@@ -190,6 +206,10 @@ extension Cleanup {
     /// Empties the item's folders. Returns how many entries were left behind.
     static func clean(_ item: CleanItem, home: String = NSHomeDirectory(), running: [RunningApp]) -> Int {
         let folders = folders(item, home: home, running: running)
+        if case .olderThan(let rel, let days) = item.kind {
+            guard let dir = folders.first, allowed(dir, home: home) else { return 1 }
+            return oldFiles(in: rel, days: days, home: home).filter { (try? FileManager.default.removeItem(at: $0)) == nil }.count
+        }
         if let id = item.bundleID, running.contains(where: { $0.bundleID == id }) { return folders.count }  // open app: leave it
         return folders.reduce(0) { $0 + ((try? removeContents(of: $1, home: home)) ?? 0) }
     }

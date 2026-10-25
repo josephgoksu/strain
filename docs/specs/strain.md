@@ -341,3 +341,13 @@ Bottom of Clean, on a click only (Measure): about a minute of disk walking, and 
 | Largest folders | The ten largest folders exactly two levels under home (`~/Development/products`, `~/Library/Developer`). Skips other apps' containers, cloud folders, Mail, Messages and the Trash. Show in Finder only |
 | Old downloads | Items directly in Downloads not opened or changed for `Thresholds.oldDownloadDays` (90). Move to Trash after a confirm (recoverable), refused for anything outside Downloads |
 
+## 27. Old logs and Background badges (2026-10-25)
+
+| Part | What |
+|---|---|
+| Old logs | Clean row: files in `~/Library/Logs` (crash reports included) not modified for 30 days. Recent ones and the folders stay |
+| Leftover | Background badge: the item's app, program or launch file is gone, so it can't run. Helpers listed relative to their app ("Contents/Library/LoginItems/X.app") resolve through their parent record; "/Users/<uid>" maps to the real home |
+| Not notarized | Background badge for `.app` targets Gatekeeper (`spctl --assess --type execute`) doesn't accept. A local build of your own app shows it too |
+| Unsigned | Background badge for bare programs (Mach-O) with no valid signature (`codesign --verify`). Gatekeeper can't assess those ("not an app"). Scripts get no badge |
+| Cost | Signatures checked off the main thread when the list loads, ~100 ms per item |
+

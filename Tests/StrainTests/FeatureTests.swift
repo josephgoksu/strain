@@ -82,3 +82,52 @@ import Testing
     fm.createFile(atPath: home + "/keep.txt", contents: Data())
     #expect(!Space.trash(home + "/keep.txt", home: home) && fm.fileExists(atPath: home + "/keep.txt"))  // not in Downloads
 }
+
+@Test func oldLogsGoAndRecentOnesStay() throws {
+    let home = FileManager.default.temporaryDirectory.appendingPathComponent("strain-logs-\(UUID())").path
+    defer { try? FileManager.default.removeItem(atPath: home) }
+    let fm = FileManager.default, logs = home + "/Library/Logs/DiagnosticReports"
+    try fm.createDirectory(atPath: logs, withIntermediateDirectories: true)
+    for name in ["old.ips", "new.ips"] { fm.createFile(atPath: logs + "/" + name, contents: Data(count: 100)) }
+    try fm.setAttributes([.modificationDate: Date.now - 40 * 86400], ofItemAtPath: logs + "/old.ips")
+    let item = Cleanup.items.first { $0.id == "logs" }!
+    #expect(Cleanup.clean(item, home: home, running: []) == 0)
+    #expect(!fm.fileExists(atPath: logs + "/old.ips") && fm.fileExists(atPath: logs + "/new.ips") && fm.fileExists(atPath: logs))
+}
+
+@Test func helpersInsideAnAppResolveAndADeletedAppShowsAsMissing() {
+    let text = """
+     #1:
+                     Name: Gone
+               Identifier: 2.app.gone.Gone
+                      URL: /Applications/Gone-\(UUID()).app
+                     Type: app (0x2)
+              Disposition: [disabled, allowed, notified] (0xa)
+
+     #2:
+                     Name: GoneHelper
+               Identifier: 4.app.gone.GoneHelper
+                      URL: Contents/Library/LoginItems/GoneHelper.app
+                     Type: login item (0x4)
+              Disposition: [disabled, allowed, notified] (0xa)
+        Parent Identifier: 2.app.gone.Gone
+    """
+    let helper = parseBTM(text).first { $0.name == "GoneHelper" }!
+    #expect(helper.url!.hasSuffix(".app/Contents/Library/LoginItems/GoneHelper.app") && helper.url!.hasPrefix("/Applications/Gone-"))
+    #expect(helper.missing)
+    #expect(localPath("/Users/\(getuid())/Library/x") == NSHomeDirectory() + "/Library/x")
+}
+
+@Test func signingBadgesMatchGatekeeper() throws {
+    #expect(Signing.badge("/System/Applications/Calculator.app") == nil)  // Apple's own
+    #expect(Signing.badge("/bin/ls") == nil)                              // signed program
+    let copy = FileManager.default.temporaryDirectory.appendingPathComponent("strain-ls-\(UUID())").path
+    defer { try? FileManager.default.removeItem(atPath: copy) }
+    try FileManager.default.copyItem(atPath: "/bin/ls", toPath: copy)
+    #expect(exitStatus("/usr/bin/codesign", ["--remove-signature", copy]) == 0)
+    #expect(Signing.badge(copy) == "Unsigned")
+    let script = copy + ".sh"
+    FileManager.default.createFile(atPath: script, contents: Data("#!/bin/sh\n".utf8))
+    defer { try? FileManager.default.removeItem(atPath: script) }
+    #expect(Signing.badge(script) == nil)  // scripts are readable: no badge
+}
